@@ -1,0 +1,5 @@
+/bin/
+/pkg/
+/vendor/
+*.env
+*.log
