@@ -81,7 +81,12 @@ app.event("message", async ({ event }) => {
       });
 
       //store to mongodb
-      await Message.insertMany(res);
+      for (const obj of res) {
+        if (obj['is_valid']) {
+          await Message.insertOne(obj);
+        }
+      }      
+      // await Message.insertMany(res);
       
       // res.channelName = await getChannelName(newMessage.channel);
       console.log(res)
