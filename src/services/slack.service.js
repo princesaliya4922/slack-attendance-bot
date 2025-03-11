@@ -61,25 +61,27 @@ app.event("message", async ({ event }) => {
     if (!event.subtype) {
       console.log(`📩 Message from ${event.user}: ${event.text}`);
 
-      const newMessage = new Message({
-        user: event.user,
-        text: event.text,
-        ts: event.ts,
-        channel: event.channel,
-      });
+      // const newMessage = new Message({
+      //   user: event.user,
+      //   text: event.text,
+      //   ts: event.ts,
+      //   channel: event.channel,
+      // });
 
       // await newMessage.save();
-      console.log(newMessage);
 
-      const res = await chatWithGemini(newMessage.text);
-      const username = await getUserName(newMessage.user);
+      const res = await chatWithGemini(event.text);
+      const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
       res.forEach(obj=>{
-        obj.user = newMessage.user;
-        obj.channel = newMessage.channel;
+        obj.user = event.user;
+        obj.channel = event.channel;
         obj.username = username;
         obj.channelname = channelname;
       });
+
+      //store to mongodb
+      await Message.insertMany(res);
       
       // res.channelName = await getChannelName(newMessage.channel);
       console.log(res)
