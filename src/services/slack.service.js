@@ -53,50 +53,87 @@ async function getChannelName(channelId) {
 }
 
 
+async function parseQuery(queryText) {
+  try {
+    const response = await chatWithGemini(`Convert this query into a MongoDB JSON query: ${queryText}`);
+    return JSON.parse(response);
+  } catch (error) {
+    console.error("❌ Error parsing query:", error);
+    return null;
+  }
+}
+
+
+async function executeQuery(query) {
+  try {
+    return await Message.find(query);
+  } catch (error) {
+    console.error("❌ Error executing MongoDB query:", error);
+    return [];
+  }
+}
+
+function formatResults(results) {
+  return results.map(r => `📌 **${r.username}** was on **${r.category}** leave from ${r.start_time} to ${r.end_time}`).join("\n");
+}
+
+
+
 
 
 // Listen for messages and save them to MongoDB
-app.event("message", async ({ event }) => {
+app.event("message", async ({ event, say }) => {
   try {
     if (!event.subtype) {
       console.log(`📩 Message from ${event.user}: ${event.text}`);
 
-      // const newMessage = new Message({
-      //   user: event.user,
-      //   text: event.text,
-      //   ts: event.ts,
-      //   channel: event.channel,
-      // });
+      const userInput = event.text.trim();
 
-      // await newMessage.save();
+      // Check if the message is a query
+      if (userInput.startsWith("/attquery")) {
+        const queryText = userInput.replace("/attquery", "").trim();
+        if (!queryText) {
+          await say("Please provide a query. Example: `/attquery show all leaves for John`");
+          return;
+        }
 
-      const res = await chatWithGemini(event.text);
+        const structuredQuery = await parseQuery(queryText);
+        const results = await executeQuery(structuredQuery);
+
+        if (results.length === 0) {
+          await say("No records found.");
+        } else {
+          await say(formatResults(results));
+        }
+
+        return; // Stop further processing
+      }
+
+      // Process normal messages with Gemini
+      const res = await chatWithGemini(userInput);
       const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
-      res.forEach(obj=>{
+
+      res.forEach(obj => {
         obj.user = event.user;
         obj.channel = event.channel;
         obj.username = username;
         obj.channelname = channelname;
       });
 
-      //store to mongodb
+      // Store valid responses in MongoDB
       for (const obj of res) {
-        if (obj['is_valid']) {
+        if (obj["is_valid"]) {
           await Message.insertOne(obj);
         }
-      }      
-      // await Message.insertMany(res);
-      
-      // res.channelName = await getChannelName(newMessage.channel);
-      console.log(res)
-      // console.log(await getUserName(newMessage.user));
-      
+      }
 
+      console.log(res);
     }
   } catch (error) {
     console.error("❌ Error handling message:", error);
   }
 });
+
 
 module.exports = app;
