@@ -15,8 +15,10 @@
     "@google/generative-ai": "^0.24.0",
     "@slack/bolt": "^4.2.1",
     "dotenv": "^16.4.7",
+    "moment-timezone": "^0.5.47",
     "mongoose": "^8.12.1",
-    "natural": "^8.0.1"
+    "natural": "^8.0.1",
+    "openai": "^4.87.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

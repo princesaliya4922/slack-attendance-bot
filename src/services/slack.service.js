@@ -2,6 +2,8 @@ const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
 const chatWithGemini = require("./gemini.service");
+const { chatWithOpenAICategory, chatWithOpenAIQuery, chatWithOpenAIResponse } = require("./openai.service");
+const { executeMongooseQueryEval } = require("./mongo.query");
 
 // console.log(env.SLACK_APP_TOKEN)
 
@@ -53,25 +55,25 @@ async function getChannelName(channelId) {
 }
 
 
-async function parseQuery(queryText) {
-  try {
-    const response = await chatWithGemini(`Convert this query into a MongoDB JSON query: ${queryText}`);
-    return JSON.parse(response);
-  } catch (error) {
-    console.error("❌ Error parsing query:", error);
-    return null;
-  }
-}
+// async function parseQuery(queryText) {
+//   try {
+//     const response = await chatWithOpenAIQuery(queryText);
+//     return JSON.parse(response);
+//   } catch (error) {
+//     console.error("❌ Error parsing query:", error);
+//     return null;
+//   }
+// }
 
 
-async function executeQuery(query) {
-  try {
-    return await Message.find(query);
-  } catch (error) {
-    console.error("❌ Error executing MongoDB query:", error);
-    return [];
-  }
-}
+// async function executeQuery(query) {
+//   try {
+//     return await Message.find(query);
+//   } catch (error) {
+//     console.error("❌ Error executing MongoDB query:", error);
+//     return [];
+//   }
+// }
 
 function formatResults(results) {
   return results.map(r => `📌 **${r.username}** was on **${r.category}** leave from ${r.start_time} to ${r.end_time}`).join("\n");
@@ -90,20 +92,25 @@ app.event("message", async ({ event, say }) => {
       const userInput = event.text.trim();
 
       // Check if the message is a query
-      if (userInput.startsWith("/attquery")) {
-        const queryText = userInput.replace("/attquery", "").trim();
+      if (userInput.startsWith("$query")) {
+        const queryText = userInput.replace("$query", "").trim();
         if (!queryText) {
-          await say("Please provide a query. Example: `/attquery show all leaves for John`");
+          await say("Please provide a query. Example: `$query show all leaves for John`");
           return;
         }
 
-        const structuredQuery = await parseQuery(queryText);
-        const results = await executeQuery(structuredQuery);
+        const mongoQuery = await chatWithOpenAIQuery(queryText);
+        console.log("MongoDB Query:", mongoQuery);
+        const mongoResponse = await executeMongooseQueryEval(mongoQuery);
+        console.log("MongoDB Response:", mongoResponse);
+        const finalResponse = await chatWithOpenAIResponse(`MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(mongoResponse)}`);
+        console.log("Final Response:", finalResponse);
+        // const results = await executeQuery(structuredQuery);
 
-        if (results.length === 0) {
+        if (finalResponse?.length === 0) {
           await say("No records found.");
         } else {
-          await say(formatResults(results));
+          await say(finalResponse);
         }
 
         return; // Stop further processing

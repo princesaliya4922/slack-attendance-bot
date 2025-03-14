@@ -501,11 +501,11 @@ Message.aggregate([
   
   
 
-  console.log('mResponse',mResponse);
+  // console.log('mResponse',mResponse);
   // return JSON.parse(cleanJson);
 }
 
-queryGemini('Who took the most leaves this month');
+// queryGemini('Who took the most leaves this month');
 
 // Example Usage
 // chatWithGemini("on leave tomorrow");
