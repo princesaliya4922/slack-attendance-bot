@@ -566,6 +566,16 @@ here is some information about leave category:
 5. **LE (LEAVING EARLY)**
 6. **OOO (OUT OF OFFICE)**
 
+
+Note : The below is the given example of response format, you can use this format to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response. 
+🌴 for Full Day Leave (FDL)
+🌓 for Half Day Leave (HDL)
+⏰ for Late to Office (LTO)
+🏃‍♂️ for Leaving Early (LE)
+🚪 for Out of Office (OOO)
+🏡 for Work From Home (WFH)
+
+
 - The response will be sent to slack bot so format it accordingly.
 
 - 'groupedDocuments' field contains all the refered documents in the of that perticular group. so if 
@@ -578,8 +588,6 @@ here is some information about leave category:
 - conver dates in human readable way and use IST timezone.
 
 - If query is Asking for all leave details then give it.
-
-## Query and Mongodb response
 ${prompt}
 `;
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
@@ -602,4 +610,4 @@ ${prompt}
 // Example Usage
 // chatWithGemini("on leave tomorrow");
  
-module.exports = {chatWithGemini, queryGemini};
+module.exports = {chatWithGemini, queryGemini, responseGemini};

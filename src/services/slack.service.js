@@ -1,7 +1,7 @@
 const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
-const { chatWithGemini, queryGemini } = require("./gemini.service");
+const { chatWithGemini, queryGemini, responseGemini } = require("./gemini.service");
 const {
   chatWithOpenAICategory,
   chatWithOpenAIQuery,
@@ -25,7 +25,7 @@ const categoryEmoji = {
     full: "Out of office"
   },
   'LTO': {
-    emoji: '⏰',
+    emoji: '🏃‍♂️‍➡️',
     full: "Late to office"
   },
   'LE': {
@@ -208,7 +208,7 @@ app.event("message", async ({ event, say }) => {
             // Insert new record
             await Message.insertOne(obj);
             say(
-              `${categoryEmoji[obj.category].emoji} *Leave Notification* ${categoryEmoji[obj.category].emoji}\n👤👨‍💻 *Name:* ${
+              `*Leave Notification*\n👨‍💻 *Name:* ${
                 obj.username
               }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
                 obj.duration
