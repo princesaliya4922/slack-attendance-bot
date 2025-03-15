@@ -1,7 +1,7 @@
 const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
-const {chatWithGemini, queryGemini} = require("./gemini.service");
+const { chatWithGemini, queryGemini } = require("./gemini.service");
 const {
   chatWithOpenAICategory,
   chatWithOpenAIQuery,
@@ -128,6 +128,7 @@ app.event("message", async ({ event, say }) => {
       // }
 
       // Process normal messages with Gemini
+
       const res = await chatWithGemini(userInput);
       const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
@@ -165,16 +166,30 @@ app.event("message", async ({ event, say }) => {
         });
 
         if (obj["is_valid"]) {
-          say(
-            `📢 *Leave Notification* 📢\n👤 *Name:* ${
-              obj.username
-            }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
-              obj.duration
-            }\n📌 *Type:* ${obj.category}\n📝 *Reason:* ${
-              obj.reason || "Not specified"
-            }\n`
-          );
-          await Message.insertOne(obj);
+          // Check for existing record with the same category and time
+          const existingRecord = await Message.findOne({
+            category: obj.category,
+            start_time: obj.start_time,
+            end_time: obj.end_time,
+          });
+
+          if (existingRecord) {
+            // Update the existing record
+            await Message.updateOne({ _id: existingRecord._id }, { $set: obj });
+            say(`Updated existing leave record for ${obj.username}.`);
+          } else {
+            // Insert new record
+            await Message.insertOne(obj);
+            say(
+              `📢 *Leave Notification* 📢\n👤 *Name:* ${
+                obj.username
+              }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
+                obj.duration
+              }\n📌 *Type:* ${obj.category}\n📝 *Reason:* ${
+                obj.reason || "Not specified"
+              }\n`
+            );
+          }
         } else if (obj.errMessage.length) {
           say(obj.errMessage);
         }
