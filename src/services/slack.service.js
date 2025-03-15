@@ -87,25 +87,6 @@ async function getChannelName(channelId) {
   }
 }
 
-// async function parseQuery(queryText) {
-//   try {
-//     const response = await chatWithOpenAIQuery(queryText);
-//     return JSON.parse(response);
-//   } catch (error) {
-//     console.error("❌ Error parsing query:", error);
-//     return null;
-//   }
-// }
-
-// async function executeQuery(query) {
-//   try {
-//     return await Message.find(query);
-//   } catch (error) {
-//     console.error("❌ Error executing MongoDB query:", error);
-//     return [];
-//   }
-// }
-
 function formatResults(results) {
   return results
     .map(
@@ -122,39 +103,6 @@ app.event("message", async ({ event, say }) => {
       console.log(`📩 Message from ${event.user}: ${event.text}`);
 
       const userInput = event.text.trim();
-
-      // Check if the message is a query
-      // if (userInput.startsWith("$query")) {
-      //   const queryText = userInput.replace("$query", "").trim();
-      //   if (!queryText) {
-      //     await say(
-      //       "Please provide a query. Example: `$query show all leaves for John`"
-      //     );
-      //     return;
-      //   }
-
-      //   const mongoQuery = await chatWithOpenAIQuery(queryText);
-      //   console.log("MongoDB Query:", mongoQuery);
-      //   const mongoResponse = await executeMongooseQueryEval(mongoQuery);
-      //   console.log("MongoDB Response:", mongoResponse);
-      //   const finalResponse = await chatWithOpenAIResponse(
-      //     `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
-      //       mongoResponse
-      //     )}`
-      //   );
-      //   console.log("Final Response:", finalResponse);
-      //   // const results = await executeQuery(structuredQuery);
-
-      //   if (finalResponse?.length === 0) {
-      //     await say("No records found.");
-      //   } else {
-      //     await say(finalResponse);
-      //   }
-
-      //   return; // Stop further processing
-      // }
-
-      // Process normal messages with Gemini
 
       const res = await chatWithGemini(userInput);
       const username = await getUserName(event.user);
@@ -261,24 +209,6 @@ async function queryHandler({ command, ack, respond }) {
     } else {
       await respond(finalResponse);
     }
-    // const mongoQuery = await chatWithOpenAIQuery(queryText);
-    // console.log("MongoDB Query:", mongoQuery);
-
-    // // Execute the query
-    // const mongoResponse = await executeMongooseQueryEval(mongoQuery);
-    // console.log("MongoDB Response:", mongoResponse);
-
-    // // Get a final human-readable response
-    // const finalResponse = await chatWithOpenAIResponse(
-    //   `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(mongoResponse)}`
-    // );
-    // console.log("Final Response:", finalResponse);
-
-    // if (!finalResponse || finalResponse.length === 0) {
-    //   await respond("No records found.");
-    // } else {
-    //   await respond(finalResponse);
-    // }
   } catch (error) {
     console.error("❌ Error handling /query command:", error);
     await respond("An error occurred while processing your query.");

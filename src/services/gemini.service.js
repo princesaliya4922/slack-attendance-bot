@@ -533,21 +533,13 @@ Message.aggregate([
 ${prompt}
 `;
 
-
-
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const result = await model.generateContent(finalMsg);
   const response = result.response;
-  // console.log("Gemini Response:", response.text());
-  // const cleanJson = response.text().replace(/```json|```/g, "").trim();
-  // console.log(cleanJson); 
-  // console.log(JSON.parse(cleanJson));
   const cleanJson = response.text().replace(/^```(json|javascript)\n|\n```$/g, '').trim();
   console.log('query',response.text());
   return cleanJson;
-  // console.log('mResponse',mResponse);
-  // return JSON.parse(cleanJson);
 }
 
 async function responseGemini(prompt) {
@@ -596,20 +588,11 @@ ${prompt}
 
   const result = await model.generateContent(finalMsg);
   const response = result.response;
-  // console.log("Gemini Response:", response.text());
-  // const cleanJson = response.text().replace(/```json|```/g, "").trim();
-  // console.log(cleanJson); 
-  // console.log(JSON.parse(cleanJson));
+
   const cleanJson = response.text().replace(/^```(json|javascript)\n|\n```$/g, '').trim();
   console.log('query',response.text());
   return cleanJson;
-  // console.log('mResponse',mResponse);
-  // return JSON.parse(cleanJson);
+
 }
-
-// queryGemini('Who took the most leaves this month');
-
-// Example Usage
-// chatWithGemini("on leave tomorrow");
  
 module.exports = {chatWithGemini, queryGemini, responseGemini};
