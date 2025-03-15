@@ -237,7 +237,7 @@ Note: "all the fields specified should be there in response, if value not availa
      ]
      \`\`\`
    - "On leave for the next 3 days" should be **split into three separate objects**.
-   - Always consider to split multiple events into multiple object until there is any exeption
+   - Always consider to split multiple events into multiple objects until there is any exeption
      like "will arrive little late by 11 till then WFH" (here two events are related to each other
      as we discussed earlier)
 
@@ -286,7 +286,7 @@ then since tomorrow saturday so is_true should be false and errMessage creativel
 - Negative timings doesn't work, if start_time is greater than end_time then set **is_valid to false**
 - Specify the reason only if it is there in the message (otherwise leave it emply)
   Example: "will arrive little late by 11 due to vehicle issue" -> so here the reason is mentioned as "vehicle issue" then specify it. otherwise leave it as empty string.
-
+ 
 ### Important Note
 - If the message time falls on sundays then **\`is_valid = false\`** (office is closed on sunday)
   example: Let say today is Saturday, and message is "On leave tomorrow" and so on, then tomorrow will be sunday so message should not be considered **\`is_valid = false\`**
