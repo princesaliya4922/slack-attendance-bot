@@ -21,6 +21,30 @@ async function executeMongooseQueryEval(queryString) {
   }
 }
 
+Message.aggregate([
+  {
+    $match: {
+      category: { $in: ["FDL", "HDL"] },
+      start_time: {
+        $gte: new Date(new Date().getFullYear(), Math.floor(new Date().getMonth() / 3) * 3, 1),
+        $lt: new Date(new Date().getFullYear(), Math.floor(new Date().getMonth() / 3) * 3 + 3, 1)
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$user",
+      username: { $first: "$username" },
+      totalFullDayLeaves: { $sum: { $cond: [{ $eq: ["$category", "FDL"] }, 1, 0] } },
+      totalHalfDayLeaves: { $sum: { $cond: [{ $eq: ["$category", "HDL"] }, 1, 0] } },
+      groupedDocuments: { $push: "$$ROOT" }
+    }
+  },
+  { $sort: { totalFullDayLeaves: -1 } },
+  { $limit: 1 }
+]).then(res=>console.log(res))
+
+
 
 
 

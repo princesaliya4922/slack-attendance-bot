@@ -2,7 +2,11 @@ const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
 const chatWithGemini = require("./gemini.service");
-const { chatWithOpenAICategory, chatWithOpenAIQuery, chatWithOpenAIResponse } = require("./openai.service");
+const {
+  chatWithOpenAICategory,
+  chatWithOpenAIQuery,
+  chatWithOpenAIResponse,
+} = require("./openai.service");
 const { executeMongooseQueryEval } = require("./mongo.query");
 
 // console.log(env.SLACK_APP_TOKEN)
@@ -25,7 +29,9 @@ async function getUserName(userId) {
       user: userId,
     });
 
-    return response.user ? response.user.real_name || response.user.name : "Unknown User";
+    return response.user
+      ? response.user.real_name || response.user.name
+      : "Unknown User";
   } catch (error) {
     console.error("❌ Error fetching user name:", error);
     return "Unknown User";
@@ -54,7 +60,6 @@ async function getChannelName(channelId) {
   }
 }
 
-
 // async function parseQuery(queryText) {
 //   try {
 //     const response = await chatWithOpenAIQuery(queryText);
@@ -64,7 +69,6 @@ async function getChannelName(channelId) {
 //     return null;
 //   }
 // }
-
 
 // async function executeQuery(query) {
 //   try {
@@ -76,12 +80,13 @@ async function getChannelName(channelId) {
 // }
 
 function formatResults(results) {
-  return results.map(r => `📌 **${r.username}** was on **${r.category}** leave from ${r.start_time} to ${r.end_time}`).join("\n");
+  return results
+    .map(
+      (r) =>
+        `📌 **${r.username}** was on **${r.category}** leave from ${r.start_time} to ${r.end_time}`
+    )
+    .join("\n");
 }
-
-
-
-
 
 // Listen for messages and save them to MongoDB
 app.event("message", async ({ event, say }) => {
@@ -95,7 +100,9 @@ app.event("message", async ({ event, say }) => {
       if (userInput.startsWith("$query")) {
         const queryText = userInput.replace("$query", "").trim();
         if (!queryText) {
-          await say("Please provide a query. Example: `$query show all leaves for John`");
+          await say(
+            "Please provide a query. Example: `$query show all leaves for John`"
+          );
           return;
         }
 
@@ -103,7 +110,11 @@ app.event("message", async ({ event, say }) => {
         console.log("MongoDB Query:", mongoQuery);
         const mongoResponse = await executeMongooseQueryEval(mongoQuery);
         console.log("MongoDB Response:", mongoResponse);
-        const finalResponse = await chatWithOpenAIResponse(`MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(mongoResponse)}`);
+        const finalResponse = await chatWithOpenAIResponse(
+          `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
+            mongoResponse
+          )}`
+        );
         console.log("Final Response:", finalResponse);
         // const results = await executeQuery(structuredQuery);
 
@@ -121,7 +132,7 @@ app.event("message", async ({ event, say }) => {
       const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
 
-      res.forEach(obj => {
+      res.forEach((obj) => {
         obj.user = event.user;
         obj.channel = event.channel;
         obj.username = username;
@@ -129,9 +140,43 @@ app.event("message", async ({ event, say }) => {
       });
 
       // Store valid responses in MongoDB
+
       for (const obj of res) {
+        const startDateString = new Date(obj.start_time).toLocaleString(
+          "en-GB",
+          {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          }
+        );
+        const endDateString = new Date(obj.end_time).toLocaleString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        });
+
         if (obj["is_valid"]) {
+          say(
+            `📢 *Leave Notification* 📢\n👤 *Name:* ${
+              obj.username
+            }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
+              obj.duration
+            }\n📌 *Type:* ${obj.category}\n📝 *Reason:* ${
+              obj.reason || "Not specified"
+            }\n`
+          );
           await Message.insertOne(obj);
+        } else if (obj.errMessage.length) {
+          say(obj.errMessage);
         }
       }
 
@@ -142,5 +187,63 @@ app.event("message", async ({ event, say }) => {
   }
 });
 
+async function queryHandler({ command, ack, respond }) {
+  try {
+    await ack(); // Acknowledge the command request
+
+    const queryText = command.text.trim();
+    if (!queryText) {
+      await respond(
+        "Please provide a query. Example: `/query show all leaves for John`"
+      );
+      return;
+    }
+
+    // Generate a MongoDB Query using OpenAI
+    await respond(queryText);
+
+    const mongoQuery = await chatWithOpenAIQuery(queryText);
+    console.log("MongoDB Query:", mongoQuery);
+    const mongoResponse = await executeMongooseQueryEval(mongoQuery);
+    console.log("MongoDB Response:", mongoResponse);
+    const finalResponse = await chatWithOpenAIResponse(
+      `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
+        mongoResponse
+      )}`
+    );
+    console.log("Final Response:", finalResponse);
+    // const results = await executeQuery(structuredQuery);
+
+    if (finalResponse?.length === 0) {
+      await respond("No records found.");
+    } else {
+      await respond(finalResponse);
+    }
+    // const mongoQuery = await chatWithOpenAIQuery(queryText);
+    // console.log("MongoDB Query:", mongoQuery);
+
+    // // Execute the query
+    // const mongoResponse = await executeMongooseQueryEval(mongoQuery);
+    // console.log("MongoDB Response:", mongoResponse);
+
+    // // Get a final human-readable response
+    // const finalResponse = await chatWithOpenAIResponse(
+    //   `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(mongoResponse)}`
+    // );
+    // console.log("Final Response:", finalResponse);
+
+    // if (!finalResponse || finalResponse.length === 0) {
+    //   await respond("No records found.");
+    // } else {
+    //   await respond(finalResponse);
+    // }
+  } catch (error) {
+    console.error("❌ Error handling /query command:", error);
+    await respond("An error occurred while processing your query.");
+  }
+}
+
+app.command("/latequery", queryHandler);
+app.command("/query", queryHandler);
 
 module.exports = app;
