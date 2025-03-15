@@ -426,7 +426,7 @@ Message.aggregate([
 ])
 \`\`\`\
 
-- **Please Refer the examples carefully before Generating Query. (VERY IMPORTANT)**
+- **Please Refer the examples Given carefully before Generating Query. (VERY IMPORTANT)**
 
 ## **Final Instructions**\
 - 🎯 **Return ONLY the Mongoose JSON query**, nothing else (no explanations, no placeholders).
