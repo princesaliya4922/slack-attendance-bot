@@ -11,6 +11,33 @@ const { executeMongooseQueryEval } = require("./mongo.query");
 
 // console.log(env.SLACK_APP_TOKEN)
 
+const categoryEmoji = {
+  'WFH': {
+    emoji: '🏠',
+    full: "Work From Home"
+  },
+  'FDL': {
+    emoji: '🌴',
+    full: "Full Day Leave"
+  },
+  'OOO': {
+    emoji: '🛣️',
+    full: "Out of office"
+  },
+  'LTO': {
+    emoji: '⏰',
+    full: "Late to office"
+  },
+  'LE': {
+    emoji: '🏃',
+    full: "Leaving Early"
+  },
+  'HDL': {
+    emoji: '🌴',
+    full: "Half day leave"
+  },
+};
+
 // Initialize Slack App
 const app = new App({
   token: env.SLACK_BOT_TOKEN,
@@ -181,11 +208,11 @@ app.event("message", async ({ event, say }) => {
             // Insert new record
             await Message.insertOne(obj);
             say(
-              `📢 *Leave Notification* 📢\n👤 *Name:* ${
+              `${categoryEmoji[obj.category].emoji} *Leave Notification* ${categoryEmoji[obj.category].emoji}\n👤👨‍💻 *Name:* ${
                 obj.username
               }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
                 obj.duration
-              }\n📌 *Type:* ${obj.category}\n📝 *Reason:* ${
+              }\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${
                 obj.reason || "Not specified"
               }\n`
             );

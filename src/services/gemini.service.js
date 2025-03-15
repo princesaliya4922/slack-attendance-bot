@@ -147,6 +147,7 @@ You are a leave management assistant. Analyze the message and extract the requir
 Timestamp of the Message: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} (IST)
 Todays's Day: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" })}
 
+
 ### **Leave Management Assistant**
 #### **Office Timings:**
 - **Weekdays (Monday – Friday):** 9:00 AM – 6:00 PM (IST)
@@ -172,6 +173,9 @@ Return a JSON array with the following structure for each event extracted from t
 \`\`\`
 
 Note: "all the fields specified should be there in response, if value not available then pass as empty string, No extra information should be appended"
+
+- First categorize the message, like on which day event is for (Monday to saturday) or (sunday)
+- If the event falls on a Sunday, set **\`is_valid\`** to **\`false\`**" (IMPORTANT)
 
 #### **Categories:**
 1. **WFH (WORK FROM HOME)**
@@ -529,6 +533,55 @@ ${prompt}
 
 
 
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const result = await model.generateContent(finalMsg);
+  const response = result.response;
+  // console.log("Gemini Response:", response.text());
+  // const cleanJson = response.text().replace(/```json|```/g, "").trim();
+  // console.log(cleanJson); 
+  // console.log(JSON.parse(cleanJson));
+  const cleanJson = response.text().replace(/^```(json|javascript)\n|\n```$/g, '').trim();
+  console.log('query',response.text());
+  return cleanJson;
+  // console.log('mResponse',mResponse);
+  // return JSON.parse(cleanJson);
+}
+
+async function responseGemini(prompt) {
+
+  const finalMsg = `
+current Time: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} (IST)
+Todays's Day: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" })}
+
+So your job is to generate clear and concise english response to the user query based on query and mongodb query response.
+
+here is some information about leave category:
+
+#### **Categories:**
+1. **WFH (WORK FROM HOME)**
+2. **FDL (FULL DAY LEAVE)**
+3. **HDL (HALF DAY LEAVE)**
+4. **LTO (LATE TO OFFICE)**
+5. **LE (LEAVING EARLY)**
+6. **OOO (OUT OF OFFICE)**
+
+- The response will be sent to slack bot so format it accordingly.
+
+- 'groupedDocuments' field contains all the refered documents in the of that perticular group. so if 
+  any additional information is required (asked in query) then it should be there in 'groupedDocuments' field.
+
+- Just dont add all the information of 'groupedDocuments' in response, just add necessary details and format it nicely.
+
+- The response should be in good format and add emojis to make it more user friendly.
+
+- conver dates in human readable way and use IST timezone.
+
+- If query is Asking for all leave details then give it.
+
+## Query and Mongodb response
+${prompt}
+`;
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const result = await model.generateContent(finalMsg);
