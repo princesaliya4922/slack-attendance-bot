@@ -284,6 +284,8 @@ but if message is not in context of today (example: "Will leave early tomorrow a
 then since tomorrow saturday so is_true should be false and errMessage creatively based on user message (in some fun way) like "it's saturday bro" or something like that.
 - Remember office closes at 1 PM on saturday so make sure to consider this while calculating end_time on saturday.
 - Negative timings doesn't work, if start_time is greater than end_time then set **is_valid to false**
+- Specify the reason only if it is there in the message (otherwise leave it emply)
+  Example: "will arrive little late by 11 due to vehicle issue" -> so here the reason is mentioned as "vehicle issue" then specify it. otherwise leave it as empty string.
 
 ### **Message**
 ${prompt}
