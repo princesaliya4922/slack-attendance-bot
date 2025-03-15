@@ -341,6 +341,9 @@ If the group involves **multiple users**, exclude the \`username\` field:
   Message.find({ category: "WFH" }).sort({ time: -1 }).limit(50)
   \`\`\`\
 
+
+## **Please Refer Below examples carefully before Generating Query. (VERY IMPORTANT)**
+
 ## **🚀 🔍 Example Queries & Expected MongoDB Outputs**
 
 ### **1️⃣ "How many people worked from home last week?" **
@@ -426,7 +429,7 @@ Message.aggregate([
 ])
 \`\`\`\
 
-- **Please Refer the examples Given carefully before Generating Query. (VERY IMPORTANT)**
+
 
 ## **Final Instructions**\
 - 🎯 **Return ONLY the Mongoose JSON query**, nothing else (no explanations, no placeholders).

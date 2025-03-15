@@ -63,3 +63,8 @@ Why i have given names?
 - Because let say anyone asks "How many leaves did birju take this month?", so in mongodb the name of birju can be 
 anything like "Brijesh Patadiya", "Birju Patadiya" or "Birju" so i have given all the names of the employees so that 
 you have to make query accordigly.
+
+
+- If it's leave related message like "How many leaves did Prince Saliya take this month" or "Who took the most leaves this month",
+  and so on then only consider **"FDL"** and **"HDL"** category.
+- If user is asking for "leave report" for perticular user then consider all categories

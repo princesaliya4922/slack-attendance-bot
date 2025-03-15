@@ -1,7 +1,7 @@
 const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
-const chatWithGemini = require("./gemini.service");
+const {chatWithGemini, queryGemini} = require("./gemini.service");
 const {
   chatWithOpenAICategory,
   chatWithOpenAIQuery,
@@ -202,7 +202,7 @@ async function queryHandler({ command, ack, respond }) {
     // Generate a MongoDB Query using OpenAI
     await respond(queryText);
 
-    const mongoQuery = await chatWithOpenAIQuery(queryText);
+    const mongoQuery = await queryGemini(queryText);
     console.log("MongoDB Query:", mongoQuery);
     const mongoResponse = await executeMongooseQueryEval(mongoQuery);
     console.log("MongoDB Response:", mongoResponse);
