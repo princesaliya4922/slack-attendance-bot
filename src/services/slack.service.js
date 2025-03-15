@@ -202,8 +202,51 @@ app.event("message", async ({ event, say }) => {
 
           if (existingRecord) {
             // Update the existing record
-            await Message.updateOne({ _id: existingRecord._id }, { $set: obj });
-            say(`Updated existing leave record for ${obj.username}.`);
+            const updatedRecord = await Message.updateOne(
+              { _id: existingRecord._id },
+              { $set: obj }
+            );
+
+            const updatedStartDateString = new Date(
+              updatedRecord.start_time
+            ).toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+            });
+
+            const updatedEndDateString = new Date(
+              updatedRecord.end_time
+            ).toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+            });
+
+            say(
+              `Updated existing leave record for ${updatedRecord.username}.\n` +
+                `${
+                  categoryEmoji[updatedRecord.category].emoji
+                } *Leave Notification* ${
+                  categoryEmoji[updatedRecord.category].emoji
+                }\n` +
+                `👤👨‍💻 *Name:* ${updatedRecord.username}\n` +
+                `📅 *From:* ${updatedStartDateString}\n` +
+                `📅 *To:* ${updatedEndDateString}\n` +
+                `⏳ *Duration:* ${updatedRecord.duration}\n` +
+                `${categoryEmoji[updatedRecord.category].emoji} *Type:* ${
+                  updatedRecord.category
+                } (${categoryEmoji[updatedRecord.category].full})\n` +
+                `📝 *Reason:* ${updatedRecord.reason || "Not specified"}\n`
+            );
           } else {
             // Insert new record
             await Message.insertOne(obj);
