@@ -97,35 +97,35 @@ app.event("message", async ({ event, say }) => {
       const userInput = event.text.trim();
 
       // Check if the message is a query
-      if (userInput.startsWith("$query")) {
-        const queryText = userInput.replace("$query", "").trim();
-        if (!queryText) {
-          await say(
-            "Please provide a query. Example: `$query show all leaves for John`"
-          );
-          return;
-        }
+      // if (userInput.startsWith("$query")) {
+      //   const queryText = userInput.replace("$query", "").trim();
+      //   if (!queryText) {
+      //     await say(
+      //       "Please provide a query. Example: `$query show all leaves for John`"
+      //     );
+      //     return;
+      //   }
 
-        const mongoQuery = await chatWithOpenAIQuery(queryText);
-        console.log("MongoDB Query:", mongoQuery);
-        const mongoResponse = await executeMongooseQueryEval(mongoQuery);
-        console.log("MongoDB Response:", mongoResponse);
-        const finalResponse = await chatWithOpenAIResponse(
-          `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
-            mongoResponse
-          )}`
-        );
-        console.log("Final Response:", finalResponse);
-        // const results = await executeQuery(structuredQuery);
+      //   const mongoQuery = await chatWithOpenAIQuery(queryText);
+      //   console.log("MongoDB Query:", mongoQuery);
+      //   const mongoResponse = await executeMongooseQueryEval(mongoQuery);
+      //   console.log("MongoDB Response:", mongoResponse);
+      //   const finalResponse = await chatWithOpenAIResponse(
+      //     `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
+      //       mongoResponse
+      //     )}`
+      //   );
+      //   console.log("Final Response:", finalResponse);
+      //   // const results = await executeQuery(structuredQuery);
 
-        if (finalResponse?.length === 0) {
-          await say("No records found.");
-        } else {
-          await say(finalResponse);
-        }
+      //   if (finalResponse?.length === 0) {
+      //     await say("No records found.");
+      //   } else {
+      //     await say(finalResponse);
+      //   }
 
-        return; // Stop further processing
-      }
+      //   return; // Stop further processing
+      // }
 
       // Process normal messages with Gemini
       const res = await chatWithGemini(userInput);
