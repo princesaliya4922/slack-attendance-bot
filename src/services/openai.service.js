@@ -162,6 +162,16 @@ here is some information about leave category:
 5. **LE (LEAVING EARLY)**
 6. **OOO (OUT OF OFFICE)**
 
+
+Note : The below is the given example of response format, you can use this format to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response. 
+🌴 for Full Day Leave (FDL)
+🌓 for Half Day Leave (HDL)
+⏰ for Late to Office (LTO)
+🏃‍♂️ for Leaving Early (LE)
+🚪 for Out of Office (OOO)
+🏡 for Work From Home (WFH)
+
+
 - The response will be sent to slack bot so format it accordingly.
 
 - 'groupedDocuments' field contains all the refered documents in the of that perticular group. so if 
@@ -501,7 +511,7 @@ async function chatWithOpenAIResponse(prompt) {
 //       totalHalfDayLeaves: { $sum: { $cond: [{ $eq: ["$category", "HDL"] }, 1, 0] } }
 //     }
 //   }
-// ])`).then(res=>console.log(res)); 
+// ])`).then(res=>console.log(res));
 
 // const mResponse = Message.aggregate([
 //   {
