@@ -287,6 +287,10 @@ then since tomorrow saturday so is_true should be false and errMessage creativel
 - Specify the reason only if it is there in the message (otherwise leave it emply)
   Example: "will arrive little late by 11 due to vehicle issue" -> so here the reason is mentioned as "vehicle issue" then specify it. otherwise leave it as empty string.
 
+### Important Note
+- If the message time falls on sundays then **\`is_valid = false\`** (office is closed on sunday)
+  example: Let say today is Saturday, and message is "On leave tomorrow" and so on, then tomorrow will be sunday so message should not be considered **\`is_valid = false\`**
+
 ### **Message**
 ${prompt}
 `;

@@ -17,7 +17,7 @@ const categoryEmoji = {
     full: "Work From Home"
   },
   'FDL': {
-    emoji: '🌴',
+    emoji: '🏖️',
     full: "Full Day Leave"
   },
   'OOO': {
