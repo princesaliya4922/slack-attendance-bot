@@ -197,7 +197,7 @@ async function queryHandler({ command, ack, respond }) {
     const mongoQuery = await chatWithGeminiQuery(queryText);
     console.log("MongoDB Query:", mongoQuery);
     const mongoResponse = await executeMongooseQueryEval(mongoQuery);
-    console.log("MongoDB Response:", JSON.stringify(mongoResponse,'',2));
+    console.log("MongoDB Response:", mongoResponse);
     const finalResponse = await chatWithgeminiResponse(
       `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
         mongoResponse
