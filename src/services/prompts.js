@@ -78,9 +78,12 @@ Category-Specific Rules:
       - Example: "WFH till 11 AM" → Start: 9:00 AM, End: 11:00 AM
 
 4. OOO (Out of Office / AFK (Away From Keyboard))
+    - OOO requests on Sundays → { "is_valid": false, "errMessage": "Office is closed on Sunday." }
     - If no duration is mentioned → Default 1 hour.
     - OOO requests between 6:00 PM – 9:00 AM are invalid -> set "is_valid": false
-    - If message is "OOO now" after 6:00 PM, return a friendly error message:
+    - "OOO now" after 6:00 PM → Return a friendly error message.
+      - Example: "OOO now" and currentTime is not under the office hours or it is sunday then return a user friendly message
+      - If message is "OOO now" after 6:00 PM, return a friendly error message:
       - Example: "Your OOO request is after office hours. Please resubmit during working hours. :worried:"
 
    Note: "If the reason indicates a short absence of (0-3 hours) (e.g., 'meeting', 'appointment',etc.), then it is Out of Office."
@@ -176,13 +179,14 @@ Final Instructions or Remember:
 - "UNKNOWN" category should always have "is_valid": false.
 - Categorize correctly & provide a well-structured output.
 - always follow the given format <leave_analysis></leave_analysis><response></response>
+- any leave on sunday should not be allowed send a user-friendly message to the user with an emoji for a friendly tone
 
 🚀 Now, analyze the given message and provide your response accordingly. 🚀 `;
 
   return finalMsg;
 }
 
-function geminiQueryPromptFinal(prompt){
+function geminiQueryPromptFinal(prompt) {
   const finalMsg = `
 You are an AI assistant specialized in converting natural language queries about employee leave and attendance into MongoDB Mongoose queries. Your task is to generate accurate and efficient queries based on the user's input.
 
@@ -866,10 +870,10 @@ Now, generate the MongoDB Mongoose query based on the user's input. Ensure that 
 <query_analysis></query_analysis><response></response>
 `;
 
-return finalMsg
+  return finalMsg;
 }
 
-function geminiResponsePromptFinal(prompt){
+function geminiResponsePromptFinal(prompt) {
   const finalMsg = `
 You are an AI assistant integrated with a Slack bot, designed to help employees and managers with queries about leave and attendance. Your task is to generate clear, concise, and friendly responses based on user queries and MongoDB data.
 
@@ -996,7 +1000,7 @@ The response structure-> <query_analysis>your query analysis</query_analysis><re
   return finalMsg;
 }
 
-function openaiCategoryPromptFinal(prompt){
+function openaiCategoryPromptFinal(prompt) {
   const firstPrompt = `
 You are a leave management assistant. Analyze the message and extract the required details based on the following rules:
 Timestamp of the Message: ${currentTime} (IST)
@@ -1135,7 +1139,7 @@ then since tomorrow will be saturday so is_true should be false and errMessage c
   return firstPrompt;
 }
 
-function openaiQueryPromptFinal(prompt){
+function openaiQueryPromptFinal(prompt) {
   const secondPrompt = `
   You are an AI assistant responsible for converting natural language queries into MongoDB Mongoose queries for a Slack-based leave management bot. Your goal is to generate highly accurate queries while ensuring optimal performance and structured responses.
 
@@ -1360,12 +1364,12 @@ function openaiQueryPromptFinal(prompt){
   - 🎯 **Return ONLY the Mongoose JSON query**, nothing else (no explanations, no placeholders).
   - 🎯 **Ensure grouping contains \`_id\`, and where applicable, \`username\`.**
   - 🎯 **Include as much detail as possible in \`groupedDocuments\`.**
-  `
+  `;
 
   return secondPrompt;
 }
 
-function openaiResponsePromptFinal(prompt){
+function openaiResponsePromptFinal(prompt) {
   const finalMsg = `
 You are an AI assistant integrated with a Slack bot, designed to help employees and managers with queries about leave and attendance. Your task is to generate clear, concise, and friendly responses based on user queries and MongoDB data.
 
@@ -1486,8 +1490,15 @@ and then finalize the structure and relevent data.
 
 Now, please proceed with your analysis and response generation.
 And Don't add all the details, add only which is asked in query
-`
+`;
   return finalMsg;
 }
 
-module.exports= {geminiCategoryPromptFinal, geminiQueryPromptFinal, geminiResponsePromptFinal,openaiCategoryPromptFinal, openaiQueryPromptFinal, openaiResponsePromptFinal}
+module.exports = {
+  geminiCategoryPromptFinal,
+  geminiQueryPromptFinal,
+  geminiResponsePromptFinal,
+  openaiCategoryPromptFinal,
+  openaiQueryPromptFinal,
+  openaiResponsePromptFinal,
+};
