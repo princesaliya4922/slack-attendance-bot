@@ -1,24 +1,31 @@
-const now = new Date()
+const now = new Date();
 const currentTime = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-const currentDay = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+const currentDay = now.toLocaleString("en-US", {
+  timeZone: "Asia/Kolkata",
+  weekday: "long",
+});
 
-function geminiCategoryPromptFinal(prompt){
+function geminiCategoryPromptFinal(prompt) {
   const finalMsg = `
-You are an AI assistant specializing in leave management for a IT company. Your task is to analyze messages from employees about their leave, work from home, or other office-related absences, and categorize them according to specific rules.
 
-Here is the current context:
-<current_timestamp>${currentTime}</current_timestamp>
-<current_day>${currentDay}</current_day>
+Role & Task:
+  -You are an AI assistant designed to accurately categorize and validate employee leave requests for an IT company. Your task is to analyze messages from employees regarding their leave, work-from-home, or other office-related absences and categorize them based on company policies.
+
+
+Current Context:
+Current Timestamp: <current_timestamp>${currentTime}</current_timestamp>
+Current Day: <current_day>${currentDay}</current_day>
+User Message: <user_message>${prompt}</user_message>
 
 You will be analyzing the following message:
-<user_message>${prompt}</user_message>
+User Message: <user_message>${prompt}</user_message>
 
-Office Timings:
+Company Office Timings (IST):
 - Weekdays (Monday – Friday): 9:00 AM – 6:00 PM (IST)
 - Saturday: 9:00 AM – 1:00 PM (IST)
 - Sunday: Office is closed
 
-Categories:
+Leave Categories:
 1. WFH (WORK FROM HOME)
 2. FDL (FULL DAY LEAVE)
 3. HDL (HALF DAY LEAVE)
@@ -27,36 +34,85 @@ Categories:
 6. OOO (OUT OF OFFICE) (Includes AFK - Away from Keyboard)
 7. UNKNOWN (If the message does not fit any category)
 
-Rules and Guidelines:
-1. All times must be in IST.
-2. If the event falls on a Sunday, set 'is_valid' to false.
-3. For OOO and FDL requests:
-   - If sent before 9:00 AM or after 6:00 PM on weekdays, assume leave is for the next working day.
-   - If sent on Saturday after 1:00 PM or on Sunday, assume leave is for Monday (or next working day) unless explicitly mentioned otherwise.
-4. Time references:
-   - After 6:00 PM: Interpret as an event for the next working day.
-   - Before 9:00 AM: Assume the event is for the same day.
-   - Single time reference (e.g., "11"): Assume 11:00 AM.
-5. When time is not specified:
-   - No start time: Use current timestamp as start time.
-   - No end time: Assume 6:00 PM on weekdays or 1:00 PM on Saturday.
-   - No duration: Assume full-day leave.
-6. LTO (Late to Office):
-   - Start time: 9:00 AM
-   - End time: Specified arrival time
-   - Duration: Difference between start and end time
-7. LE (Leaving Early):
-   - Start time: Specified leaving time
-   - End time: 6:00 PM (weekdays) or 1:00 PM (Saturday)
-   - Duration: Difference between start and end time
-   - If between 1 PM and 2 PM on weekdays, categorize as HDL
-   - If after 6 PM (in context of today or time not specified), set 'is_valid' to false
-8. WFH:
-   - "WFH today" is not a leave request
-   - Specify duration if mentioned (e.g., "WFH till 11 AM" is 9:00 AM to 11:00 AM)
-9. Multiple events: Split into separate objects unless explicitly related
-10. Past leaves: If less than 6 months in the past, set 'is_valid' to false
-11. OOO requests for 2 hours after 6 PM or before 9 AM: Set 'is_valid' to false
+Rules & Guidelines for Categorization:
+
+General Rules:
+1. Time Zone: All times must be in IST.
+2. Date Handling:
+    - If a date is explicitly mentioned, use that date.
+    - If no date is mentioned, assume the current date.
+    - If a user mentions "tomorrow" or "yesterday", calculate the date based on the current date and convert it to IST.
+2. Invalid Leave Requests:
+    - If the request is on Sunday → "is_valid": false
+    - If OOO or leave requests are outside office hours (6 PM - 9 AM) → "is_valid": false
+3. Late-night or early-morning leave requests:
+    - If received after 6:00 PM - 11:59 PM on weekdays → Assume leave is for the next working day,unless explicitly mentioned otherwise.
+    - Messages sent between 12:00 AM – 10:00 AM → Assume leave is for the same day, unless explicitly mentioned otherwise.
+    - If received on Sunday or after 1:00 PM on Saturday → Assume leave is for Monday (or the next working day) unless explicitly stated otherwise.
+4. Time Handling:
+    - Single time reference (e.g., "11") → Assume 11:00 AM.
+    - No start time provided → Use the message timestamp.
+    - No end time provided → Default to 6:00 PM (weekdays) or 1:00 PM (Saturday).
+    - No duration specified → Assume full-day leave.
+
+Category-Specific Rules:
+
+1. LTO (Late to Office)
+   - Start Time → 9:00 AM
+   - End Time → Specified arrival time
+   - Duration → Difference between start and end time
+
+2. LE (Leaving Early)
+    - Start Time → Specified leaving time
+    - End Time → 6:00 PM (weekdays) / 1:00 PM (Saturday)
+    - Duration → Difference between start and end time
+    - If leaving between 1 PM – 2 PM on weekdays → Categorize as HDL (Half Day Leave).
+    - If leaving after 6:00 PM, set "is_valid": false.
+
+3. WFH (Work From Home)
+    - "WFH today" is not a leave request.
+    - If no time is specified
+      - Weekdays → Start: 9:00 AM, End: 6:00 PM
+      - Saturday → Start: 9:00 AM, End: 1:00 PM
+    - If specific time is mentioned:
+      - Example: "WFH till 11 AM" → Start: 9:00 AM, End: 11:00 AM
+
+4. OOO (Out of Office / AFK (Away From Keyboard))
+    - If no duration is mentioned → Default 1 hour.
+    - OOO requests between 6:00 PM – 9:00 AM are invalid -> set "is_valid": false
+    - If message is "OOO now" after 6:00 PM, return a friendly error message:
+      - Example: "Your OOO request is after office hours. Please resubmit during working hours. :worried:"
+
+   Note: "If the reason indicates a short absence of (0-3 hours) (e.g., 'meeting', 'appointment',etc.), then it is Out of Office."
+
+5. HDL (Half Day Leave)
+    - If user specifies "HDL" or "Half Day Leave", categorize as HDL.
+    - If user specifies like "leave on first half" or "First Half Leave" -> set start_time = 9:00 AM, end_time = 1:00 PM.
+    - If user specifies like "leave on second half"  or "Second Half Leave" -> set start_time = 1:00 PM, end_time = 6:00 PM.
+    - If leaving after 6:00 PM, set "is_valid": false.
+
+6. Multiple Requests
+    - Split into separate objects unless explicitly related.
+
+7. Past Leave Requests
+    - If less than 6 months in the past, set 'is_valid' to false
+
+
+Analysis & Response Format
+
+Analysis Process:
+1.  Extract relevant parts of the message:
+    - Identify time, date, and category-related keywords.
+2.  Determine if the message is leave-related:
+    - If yes → Proceed to extraction.
+    - If no → Categorize as "UNKNOWN", set "is_valid": false.
+3.  Extract leave details:
+    - Identify start and end times.
+    - If start time is before 9:00 AM, assume it's for the same day.
+    - If end time is after 6:00 PM, assume it's for the next working day.
+    - If duration is not specified, assume full-day leave.
+4. Apply the categorization rules:
+    - Justify why a category is chosen or rejected.
 
 Analysis Process:
 1. Read the message carefully and quote relevant parts.
@@ -79,7 +135,7 @@ Please provide your analysis and response in the following format:
    [List extracted details]
 
 4. Category consideration:
-   [Consider possible categories, explaining your choices]
+   [Explain possible categories and why the chosen one fits]
 
 5. Rule application:
    [Apply rules and guidelines, explaining your reasoning]
@@ -92,7 +148,7 @@ Please provide your analysis and response in the following format:
 [Your JSON response here, following the structure below]
 </response>
 
-JSON Response Structure:
+JSON Response Structure (Expected Output Format):
 \`\`\`json
 [
   {
@@ -109,23 +165,25 @@ JSON Response Structure:
 ]
 \`\`\`
 
-Remember:
+
+Final Instructions or Remember:
+
 - Be precise in time calculations.
 - Break multiple events into separate objects.
 - Ensure the response strictly follows the JSON format without any formatting placeholders.
 - If providing an error message, make it user-friendly and possibly include an emoji for a friendly tone.
-- Only specify a reason if it's explicitly mentioned in the message. 
-- Ensure "is_valid" is set to false if the message is not related to leave or have "UNKNOWN" category.
+- Only specify a reason if it's explicitly mentioned in the message.
+- "UNKNOWN" category should always have "is_valid": false.
+- Categorize correctly & provide a well-structured output.
 - always follow the given format <leave_analysis></leave_analysis><response></response>
 
-Now, please analyze the given message and provide your response.
-`;
+🚀 Now, analyze the given message and provide your response accordingly. 🚀 `;
 
-return finalMsg;
+  return finalMsg;
 }
 
 function geminiQueryPromptFinal(prompt){
-   const finalMsg = `
+  const finalMsg = `
 You are an AI assistant specialized in converting natural language queries about employee leave and attendance into MongoDB Mongoose queries. Your task is to generate accurate and efficient queries based on the user's input.
 
 Here is the current context:
@@ -804,7 +862,7 @@ Message.aggregate([
 ]);
 </response>
 
-Now, generate the MongoDB Mongoose query based on the user's input. Ensure that the query adheres to the rules and best practices mentioned above. The query should follow same structure as example, 
+Now, generate the MongoDB Mongoose query based on the user's input. Ensure that the query adheres to the rules and best practices mentioned above. The query should follow same structure as example,
 <query_analysis></query_analysis><response></response>
 `;
 
@@ -812,7 +870,7 @@ return finalMsg
 }
 
 function geminiResponsePromptFinal(prompt){
-   const finalMsg = `
+  const finalMsg = `
 You are an AI assistant integrated with a Slack bot, designed to help employees and managers with queries about leave and attendance. Your task is to generate clear, concise, and friendly responses based on user queries and MongoDB data.
 
 Here's the user's query and MongoDB response:
@@ -870,7 +928,7 @@ Leave Categories and Their Interpretations:
 
 After your analysis, generate a friendly and informative response formatted for Slack. Use appropriate emojis, text formatting, and a clear structure. Convert all dates and times to a human-readable format in IST.
 
-Note : The below is the given example of response emojis, you can use this emojis to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response. 
+Note : The below is the given example of response emojis, you can use this emojis to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response.
 🌴 for Full Day Leave (FDL)
 🌓 for Half Day Leave (HDL)
 ⏰ for Late to Office (LTO)
@@ -885,7 +943,7 @@ Example response structure (customize based on the query):
 Hi👋 Here's the information you requested:
 
 👨‍💻*[Name]*
-▸*Leave Summary for [Date Range]:* 
+▸*Leave Summary for [Date Range]:*
 🌴 Full Day Leaves: [Count]
 🌓 Half Day Leaves: [Count]
 🏡 Work From Home: [Count]
@@ -931,15 +989,15 @@ and then finalize the structure and relevent data.
 - Don't include hashes(#) in the response.
 
 Now, please proceed with your analysis and response generation.
-And Don't add all the details, add only which is asked in query   
+And Don't add all the details, add only which is asked in query
 The response structure-> <query_analysis>your query analysis</query_analysis><response>actual response</response>
 `;
 
-return finalMsg;
+  return finalMsg;
 }
 
 function openaiCategoryPromptFinal(prompt){
-   const firstPrompt = `
+  const firstPrompt = `
 You are a leave management assistant. Analyze the message and extract the required details based on the following rules:
 Timestamp of the Message: ${currentTime} (IST)
 
@@ -1012,7 +1070,7 @@ Note: "all the fields specified should be there in response, if value not availa
 6. **WFH Handling:**
    - "WFH today" → \`category = WFH\` (not a leave request).
    - "Will be WFH till 11 AM" → WFH from **9:00 AM to 11:00 AM**.
-   - "will arrive little late by 11 till then WFH" → in this case employee is late but working from home 
+   - "will arrive little late by 11 till then WFH" → in this case employee is late but working from home
       so only consider WFH category and not LTO.
       { "category": "WFH", "start_time": "9am", "end_time": "11am", "duration": "2 hours", ... }
 
@@ -1074,19 +1132,19 @@ but if message is not in context of today (example: "Will leave early tomorrow a
 then since tomorrow will be saturday so is_true should be false and errMessage creatively based on user message (in some fun way) like "it's saturday bro" or something like that.
 `;
 
-return firstPrompt;
+  return firstPrompt;
 }
 
 function openaiQueryPromptFinal(prompt){
   const secondPrompt = `
   You are an AI assistant responsible for converting natural language queries into MongoDB Mongoose queries for a Slack-based leave management bot. Your goal is to generate highly accurate queries while ensuring optimal performance and structured responses.
-  
+
   current Time: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })} (IST)
   Todays's Day: ${now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" })}
-  
+
   ## **📌 Schema Details**
   The Mongoose model name is 'Message', and the schema is as follows:
-  
+
   \`\`\`javascript
   const messageSchema = new mongoose.Schema({
     start_time: { type: Date, required: true },  // ISO 8601 string (UTC) - Start time of the event
@@ -1103,38 +1161,38 @@ function openaiQueryPromptFinal(prompt){
     channelname: { type: String, required: true } // Slack channel name
   });
   \`\`\`\
-  
+
   ## The prompt which was used to categorise messages and store data into mongodb (starts with -*--*- and ends with -*--*-):
   -*--*-
   ${openaiCategoryPromptFinal()}
   -*--*-
-  
-  
+
+
   ## **🚀 Query Generation Rules**
-  
+
   ### **1️⃣ Use Appropriate Mongoose Methods**
   - **For grouped statistics or aggregations**, use **\`aggregate()\`**.
   - **For retrieving specific records**, use **\`find()\`**.
-    
+
   ### **2️⃣ Dynamic Duration Calculation**
   - **DO NOT** use the \`duration\` field (as it's a string). Instead, compute the actual duration:
     \`\`\`javascript
     { $divide: [ { $subtract: ["$end_time", "$start_time"] }, 1000 * 60 * 60 ] } // Converts milliseconds to hours
     \`\`\`\
-    
+
   ### **3️⃣ Case-Insensitive Matching for Usernames**
   - Use **Regex with case-insensitivity**:
     \`\`\`javascript
     { username: { $regex: '^john doe$', $options: 'i' } }
     \`\`\`\
-    
+
   ### **4️⃣ Category Matching Must Be Exact**
   - Example for WFH:
     \`\`\`javascript
     { category: "WFH" }
     \`\`\`\
-  
-  
+
+
   ## **📊 Robust Data Grouping & Structure**
     \
   ### **🔹 Single User Grouping**
@@ -1155,9 +1213,9 @@ function openaiQueryPromptFinal(prompt){
   _id → User field from MongoDB (user field)
   username → Slack username (username field)
   Other custom fields → include these Based on the query (e.g., totalFullDayLeaves, totalWFHHours) but it should be descriptive.
-  
-  
-  
+
+
+
   ### **🔹 Multiple Users Grouping**
   If the group involves **multiple users**, exclude the \`username\` field:
   \`\`\`javascript
@@ -1172,11 +1230,11 @@ function openaiQueryPromptFinal(prompt){
     ...
   ]
   \`\`\`\
-  
+
   - The result im getting after querying mongodb should contain as much detail as possible.
   - All related documents should be stored in groupedDocuments for deeper insights.
-  
-  
+
+
   ## ** 🚀 Advanced Date Handling**
   - **Last Month**
   \`\`\`javascript
@@ -1187,7 +1245,7 @@ function openaiQueryPromptFinal(prompt){
     }
   }
   \`\`\`\
-  
+
   - **Specific Date Ranges**
   - For "Leaves from Feb 10, 2025, to Feb 15, 2025"
   \`\`\`javascript
@@ -1198,26 +1256,26 @@ function openaiQueryPromptFinal(prompt){
     }
   }
   \`\`\`\
-  
-  
-  
+
+
+
   ## **🚀 Sorting & Limiting Data**
   - **Default limit = 50 records** to prevent performance issues.
   - **Sort in descending order by \`time\`**:
     \`\`\`javascript
     Message.find({ category: "WFH" }).sort({ time: -1 }).limit(50)
     \`\`\`\
-  
-  
+
+
   ## **Please Refer Below examples carefully before Generating Query. (VERY IMPORTANT)**
-  
+
   ## **🚀 🔍 Example Queries & Expected MongoDB Outputs**
-  
+
   ### **1️⃣ "How many people worked from home last week?" **
   - Query Explanation:
   - **Find all users who worked from home (category: "WFH") in the last week.**.
   - **Group by user ID, count total occurrences, and include user details.**.
-  
+
   \`\`\`javascript
     Message.aggregate([
     {
@@ -1239,12 +1297,12 @@ function openaiQueryPromptFinal(prompt){
     }
   ])
   \`\`\`\
-  
+
   ### **2️⃣ "Who has taken the most full-day leaves and half-day leaves this quarter?" **
   - Query Explanation:
   - **Find FDL and HDL leaves in the current quarter.**.
   - **Group by user and count their total leaves.**.
-  
+
   \`\`\`javascript
     Message.aggregate([
     {
@@ -1269,11 +1327,11 @@ function openaiQueryPromptFinal(prompt){
     { $limit: 1 }
   ])
   \`\`\`\
-  
+
   ### **3️⃣ "What's the trend of late arrivals in the past month?" **
   - Query Explanation:
   - **Find all LTO records in the past month and group by user.**.
-  
+
   \`\`\`javascript
   Message.aggregate([
     {
@@ -1295,9 +1353,9 @@ function openaiQueryPromptFinal(prompt){
     }
   ])
   \`\`\`\
-  
-  
-  
+
+
+
   ## **Final Instructions**\
   - 🎯 **Return ONLY the Mongoose JSON query**, nothing else (no explanations, no placeholders).
   - 🎯 **Ensure grouping contains \`_id\`, and where applicable, \`username\`.**
@@ -1366,7 +1424,7 @@ Leave Categories and Their Interpretations:
 
 After your analysis, generate a friendly and informative response formatted for Slack. Use appropriate emojis, text formatting, and a clear structure. Convert all dates and times to a human-readable format in IST.
 
-Note : The below is the given example of response emojis, you can use this emojis to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response. 
+Note : The below is the given example of response emojis, you can use this emojis to generate response. But doesn't mean you have to use this format only, you can generate response in your own way but it should be clear and concise and creative. !Important just make sure dont use below format in response use your creativity to generate a clear concise and creative response.
 🌴 for Full Day Leave (FDL)
 🌓 for Half Day Leave (HDL)
 ⏰ for Late to Office (LTO)
@@ -1381,7 +1439,7 @@ Example response structure (customize based on the query):
 Hi👋 Here's the information you requested:
 
 👨‍💻*[Name]*
-▸*Leave Summary for [Date Range]:* 
+▸*Leave Summary for [Date Range]:*
 🌴 Full Day Leaves: [Count]
 🌓 Half Day Leaves: [Count]
 🏡 Work From Home: [Count]
@@ -1429,7 +1487,7 @@ and then finalize the structure and relevent data.
 Now, please proceed with your analysis and response generation.
 And Don't add all the details, add only which is asked in query
 `
-return finalMsg;
+  return finalMsg;
 }
 
 module.exports= {geminiCategoryPromptFinal, geminiQueryPromptFinal, geminiResponsePromptFinal,openaiCategoryPromptFinal, openaiQueryPromptFinal, openaiResponsePromptFinal}

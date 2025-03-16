@@ -8,6 +8,7 @@ const {
   chatWithOpenAIResponse,
 } = require("./openai.service");
 const { executeMongooseQueryEval } = require("./mongo.query");
+const checkLeave = require("../utils/checkLeave");
 
 // console.log(env.SLACK_APP_TOKEN)
 
@@ -142,7 +143,17 @@ app.event("message", async ({ event, say }) => {
           hour12: true,
         });
 
-        if (obj["is_valid"] && obj.category !== 'UNKNOWN') {
+        // console.log(`Start Time: ${startDateString}`);
+        // console.log(`End Time: ${endDateString}`);
+
+        // const response = await checkLeave(
+        //   obj.start_time,
+        //   obj.end_time,
+        //   obj.username,
+        // );
+        // console.log(response, "responseeee");
+
+        if (obj["is_valid"] && obj.category !== "UNKNOWN") {
           // Check for existing record with the same category and time
           const existingRecord = await Message.findOne({
             category: obj.category,
