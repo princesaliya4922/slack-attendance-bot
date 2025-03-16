@@ -9,7 +9,6 @@ You are an AI assistant specializing in leave management for a IT company. Your 
 Here is the current context:
 <current_timestamp>${currentTime}</current_timestamp>
 <current_day>${currentDay}</current_day>
-<time_zone>Asia/Kolkata</time_zone>
 
 You will be analyzing the following message:
 <user_message>${prompt}</user_message>
@@ -31,7 +30,7 @@ Categories:
 Rules and Guidelines:
 1. All times must be in IST.
 2. If the event falls on a Sunday, set 'is_valid' to false.
-3. For OOO and FDL requests:
+3. For FDL requests:
    - If sent before 9:00 AM or after 6:00 PM on weekdays, assume leave is for the next working day.
    - If sent on Saturday after 1:00 PM or on Sunday, assume leave is for Monday (or next working day) unless explicitly mentioned otherwise.
 4. Time references:
@@ -939,8 +938,15 @@ and then finalize the structure and relevent data.
 - Don't include hashes(#) in the response.
 
 Now, please proceed with your analysis and response generation.
-And Don't add all the details, add only which is asked in query   
-The response structure-> <query_analysis>your query analysis</query_analysis><response>actual response</response>
+And Don't add all the details, add only which is asked in query  
+
+Always follow following structure for response (Important):
+<query_analysis>
+[Your query analysis here]
+</query_analysis>
+<response>
+[Mongodb query here]
+</response>
 `;
 
 return finalMsg;
