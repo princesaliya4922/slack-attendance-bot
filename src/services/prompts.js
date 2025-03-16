@@ -9,6 +9,7 @@ You are an AI assistant specializing in leave management for a IT company. Your 
 Here is the current context:
 <current_timestamp>${currentTime}</current_timestamp>
 <current_day>${currentDay}</current_day>
+<time_zone>Asia/Kolkata</time_zone>
 
 You will be analyzing the following message:
 <user_message>${prompt}</user_message>
@@ -131,6 +132,7 @@ You are an AI assistant specialized in converting natural language queries about
 Here is the current context:
 <current_timestamp>${currentTime}</current_timestamp>
 <current_day>${currentDay}</current_day>
+<time_zone>Asia/Kolkata</time_zone>
 All the times follows Indian Standard Time (IST)
 
 Here is the user's query:
