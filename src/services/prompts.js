@@ -14,8 +14,8 @@ You will be analyzing the following message:
 <user_message>${prompt}</user_message>
 
 Office Timings:
-- Weekdays (Monday – Friday): 9:00 AM – 6:00 PM (IST)
-- Saturday: 9:00 AM – 1:00 PM (IST)
+- Weekdays (Monday - Friday): 9:00 AM - 6:00 PM (IST)
+- Saturday: 9:00 AM - 1:00 PM (IST)
 - Sunday: Office is closed
 
 Categories:
@@ -116,7 +116,7 @@ Remember:
 - If providing an error message, make it user-friendly and possibly include an emoji for a friendly tone.
 - Only specify a reason if it's explicitly mentioned in the message. 
 - Ensure "is_valid" is set to false if the message is not related to leave or have "UNKNOWN" category.
-- always follow the given format <leave_analysis></leave_analysis><response></response>
+- Always follow the given format <leave_analysis></leave_analysis><response></response>
 
 Now, please analyze the given message and provide your response.
 `;
@@ -377,7 +377,7 @@ Message.aggregate([
       username: { $first: "$username" },
       totalLeaves: {
         $sum: {
-          $cond: [{ $eq: ["$category", "HDL"] }, 0.5, 1]
+          $cond: [{ $eq: ["$category", "HDL"] }, 1, 1]
         }
       },
       fullDayLeaves: { $sum: { $cond: [{ $eq: ["$category", "FDL"] }, 1, 0] } },
@@ -814,6 +814,12 @@ return finalMsg
 function geminiResponsePromptFinal(prompt){
    const finalMsg = `
 You are an AI assistant integrated with a Slack bot, designed to help employees and managers with queries about leave and attendance. Your task is to generate clear, concise, and friendly responses based on user queries and MongoDB data.
+
+Here is the current context:
+<current_timestamp>${currentTime}</current_timestamp>
+<current_day>${currentDay}</current_day>
+<time_zone>Asia/Kolkata</time_zone>
+All the times follows Indian Standard Time (IST)
 
 Here's the user's query and MongoDB response:
 <user_query_and_mongodb_response>
