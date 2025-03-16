@@ -1,7 +1,7 @@
 const { App } = require("@slack/bolt");
 const Message = require("../models/message.model");
 const env = require("../config/env");
-const { chatWithGemini, queryGemini, responseGemini } = require("./gemini.service");
+const { chatWithGeminiCategory, chatWithGeminiQuery, chatWithgeminiResponse } = require("./gemini.service");
 const {
   chatWithOpenAICategory,
   chatWithOpenAIQuery,
@@ -104,9 +104,11 @@ app.event("message", async ({ event, say }) => {
 
       const userInput = event.text.trim();
 
-      const res = await chatWithGemini(userInput);
+      const res = await chatWithGeminiCategory(userInput);
       const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
+
+      // console.log(res);
 
       res.forEach((obj) => {
         obj.user = event.user;
@@ -140,7 +142,7 @@ app.event("message", async ({ event, say }) => {
           hour12: true,
         });
 
-        if (obj["is_valid"]) {
+        if (obj["is_valid"] && obj.category !== 'UNKNOWN') {
           // Check for existing record with the same category and time
           const existingRecord = await Message.findOne({
             category: obj.category,
@@ -170,7 +172,7 @@ app.event("message", async ({ event, say }) => {
         }
       }
 
-      console.log(res);
+      // console.log(res);
     }
   } catch (error) {
     console.error("❌ Error handling message:", error);
@@ -192,10 +194,10 @@ async function queryHandler({ command, ack, respond }) {
     // Generate a MongoDB Query using OpenAI
     await respond(queryText);
 
-    const mongoQuery = await queryGemini(queryText);
+    const mongoQuery = await chatWithGeminiQuery(queryText);
     console.log("MongoDB Query:", mongoQuery);
     const mongoResponse = await executeMongooseQueryEval(mongoQuery);
-    console.log("MongoDB Response:", mongoResponse);
+    console.log("MongoDB Response:", JSON.stringify(mongoResponse,'',2));
     const finalResponse = await chatWithOpenAIResponse(
       `MongoDB Query: ${mongoQuery}\n\nMongoDB Response: ${JSON.stringify(
         mongoResponse
