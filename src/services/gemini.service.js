@@ -50,7 +50,9 @@ async function chatWithgeminiResponse(prompt) {
   const result = await model.generateContent(finalMsg);
   const response = result.response;
 
-  const cleanJson = response.text().replace(/^```(json|javascript)\n|\n```$/g, '').trim();
+  const match = response.text().match(/<response>\s*([\s\S]*?)\s*<\/response>/);
+  const finalResult = match ? match[1].trim() : null
+  const cleanJson = finalResult.replace(/^```(json|javascript|slack)\n|\n```$/g, '').trim();
   console.log('query',response.text());
   return cleanJson;
 }

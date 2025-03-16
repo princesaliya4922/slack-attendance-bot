@@ -878,28 +878,62 @@ Note : The below is the given example of response emojis, you can use this emoji
 🚪 for Out of Office (OOO)
 🏡 for Work From Home (WFH)
 
-## Some formating rules of slack (refer this):
-Bold: *bold text* → bold text
-Italic: _italic text_ → italic text
-Code: \`inline code\` → inline code
-Blockquote: > This is a quote
 
-Unordered List:
-- Item 1
-- Item 2 
+Example response structure (customize based on the query):
 
-Ordered List:
-1. First item
-2. Second item
+\`\`\`
+Hi👋 Here's the information you requested:
 
-@username – Mention a user
-#channel-name – Mention a channel
-Preformatted Text: \`\`\`text\`\`\` → Displays text exactly as typed
+👨‍💻*[Name]*
+▸*Leave Summary for [Date Range]:* 
+🌴 Full Day Leaves: [Count]
+🌓 Half Day Leaves: [Count]
+🏡 Work From Home: [Count]
+⏰ Late To Office: [Count]
+🚪 Out Of Office: [Count]
+🏃‍♂️ Leaving Early: [count]
+
+📋*Detailed Breakdown:*
+🌴*Full day Leaves*
+  1. [Date]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
+
+  2. [Date]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
+
+🌓*Half day Leaves*
+  1. [Date]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
+
+  2. [Date]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
+
+.
+.
+.
+[Any additional relevant information or notes]
+
+[Continue of another employee]
+
+Let me know if you need any more details! 😊
+\`\`\`
+
+- This is just a example structure that you can refer, First You have to anlyze the query what user have asked for
+and then finalize the structure and relevent data.
+- Don't include hashes(#) in the response.
 
 Now, please proceed with your analysis and response generation.
-And Don't add all the details, add only which is asked in query
-The response will be direcly sent in the slack group so dont give any extra information like </query_analysis> and so on, just user friendly response
-`
+And Don't add all the details, add only which is asked in query   
+The response structure-> <query_analysis>your query analysis</query_analysis><response>actual response</response>
+`;
 
 return finalMsg;
 }
@@ -1358,25 +1392,25 @@ Hi👋 Here's the information you requested:
 📋*Detailed Breakdown:*
 🌴*Full day Leaves*
   1. [Date]
-    From: [start_time(time only)] To: [end_time(time only)]
-    Duration: [duration]
-    Reason: [Reason if available in 'reason' field]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
 
   2. [Date]
-    From: [start_time(time only)] To: [end_time(time only)]
-    Duration: [duration]
-    Reason: [Reason if available in 'reason' field]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
 
 🌓*Half day Leaves*
   1. [Date]
-    From: [start_time(time only)] To: [end_time(time only)]
-    Duration: [duration]
-    Reason: [Reason if available in 'reason' field]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
 
   2. [Date]
-    From: [start_time(time only)] To: [end_time(time only)]
-    Duration: [duration]
-    Reason: [Reason if available in 'reason' field]
+    * From: [start_time(time only)] To: [end_time(time only)]
+    * Duration: [duration]
+    * Reason: [Reason if available in 'reason' field]
 
 .
 .
