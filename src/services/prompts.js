@@ -50,7 +50,7 @@ Rules and Guidelines:
    - End time: 6:00 PM (weekdays) or 1:00 PM (Saturday)
    - Duration: Difference between start and end time
    - If between 1 PM and 2 PM on weekdays, categorize as HDL
-   - If after 6 PM (in context of today or time not specified), set 'is_valid' to false
+   - If at or after 6 PM (in context of today or time not specified), set 'is_valid' to false
 8. WFH:
    - "WFH today" is not a leave request
    - Specify duration if mentioned (e.g., "WFH till 11 AM" is 9:00 AM to 11:00 AM)
