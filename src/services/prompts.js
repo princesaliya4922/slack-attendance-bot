@@ -56,7 +56,7 @@ Rules and Guidelines:
    - Specify duration if mentioned (e.g., "WFH till 11 AM" is 9:00 AM to 11:00 AM)
 9. Multiple events: Split into separate objects unless explicitly related
 10. Past leaves: If less than 6 months in the past, set 'is_valid' to false
-11. OOO requests for 2 hours after 6 PM or before 9 AM: Set 'is_valid' to false
+11. OOO requests after 6 PM or before 9 AM: Set 'is_valid' to false
 
 Analysis Process:
 1. Read the message carefully and quote relevant parts.
