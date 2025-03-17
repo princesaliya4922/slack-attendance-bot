@@ -38,18 +38,19 @@ Rules & Guidelines for Categorization:
 
 General Rules:
 1. Time Zone: All times must be in IST.
-2. Date Handling:
+2. If the event falls on a Sunday, set 'is_valid' to false.
+3. Date Handling:
     - If a date is explicitly mentioned, use that date.
     - If no date is mentioned, assume the current date.
     - If a user mentions "tomorrow" or "yesterday", calculate the date based on the current date and convert it to IST.
-2. Invalid Leave Requests:
-    - If the request is on Sunday → "is_valid": false
+4. Invalid Leave Requests:
+    - If the request is on Sunday → set "is_valid": false
     - If OOO or leave requests are outside office hours (6 PM - 9 AM) → "is_valid": false
-3. Late-night or early-morning leave requests:
+5. Late-night or early-morning leave requests:
     - If received after 6:00 PM - 11:59 PM on weekdays → Assume leave is for the next working day,unless explicitly mentioned otherwise.
     - Messages sent between 12:00 AM – 10:00 AM → Assume leave is for the same day, unless explicitly mentioned otherwise.
     - If received on Sunday or after 1:00 PM on Saturday → Assume leave is for Monday (or the next working day) unless explicitly stated otherwise.
-4. Time Handling:
+6. Time Handling:
     - Single time reference (e.g., "11") → Assume 11:00 AM.
     - No start time provided → Use the message timestamp.
     - No end time provided → Default to 6:00 PM (weekdays) or 1:00 PM (Saturday).
@@ -78,12 +79,12 @@ Category-Specific Rules:
       - Example: "WFH till 11 AM" → Start: 9:00 AM, End: 11:00 AM
 
 4. OOO (Out of Office / AFK (Away From Keyboard))
-    - OOO requests on Sundays → { "is_valid": false, "errMessage": "Office is closed on Sunday." }
+    - OOO requests on Sundays → set { "is_valid": false, "errMessage": "Office is closed on Sunday." }
     - If no duration is mentioned → Default 1 hour.
-    - OOO requests between 6:00 PM – 9:00 AM are invalid -> set "is_valid": false
-    - "OOO now" after 6:00 PM → Return a friendly error message.
+    - OOO requests between 5:59 PM – 9:00 AM are invalid -> set "is_valid": false
+    - "OOO now" after 5:59 PM → Return a friendly error message.
       - Example: "OOO now" and currentTime is not under the office hours or it is sunday then return a user friendly message
-      - If message is "OOO now" after 6:00 PM, return a friendly error message:
+      - If message is "OOO now" after 5:59 PM, return a user friendly message with emoji:
       - Example: "Your OOO request is after office hours. Please resubmit during working hours. :worried:"
 
    Note: "If the reason indicates a short absence of (0-3 hours) (e.g., 'meeting', 'appointment',etc.), then it is Out of Office."
@@ -179,7 +180,7 @@ Final Instructions or Remember:
 - "UNKNOWN" category should always have "is_valid": false.
 - Categorize correctly & provide a well-structured output.
 - always follow the given format <leave_analysis></leave_analysis><response></response>
-- any leave on sunday should not be allowed send a user-friendly message to the user with an emoji for a friendly tone
+- any leave on sunday should not be allowed and set "is_valid": false with a user-friendly message with an emoji for a friendly tone
 
 🚀 Now, analyze the given message and provide your response accordingly. 🚀 `;
 
