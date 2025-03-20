@@ -134,11 +134,143 @@ function formatResults(results) {
     .join("\n");
 }
 
+async function checkForOverlappingLeaves(userId, startTime, endTime, newCategory) {
+  // First, normalize dates by setting hours correctly based on leave type
+  const normalizedDates = normalizeLeaveTimings(startTime, endTime, newCategory);
+  startTime = normalizedDates.startTime;
+  endTime = normalizedDates.endTime;
+
+  // Find any leave that might overlap with the requested period
+  const overlappingLeaves = await Message.find({
+    user: userId,
+    $or: [
+      // Case 1: New leave starts during an existing leave
+      { start_time: { $lte: startTime }, end_time: { $gte: startTime } },
+      // Case 2: New leave ends during an existing leave
+      { start_time: { $lte: endTime }, end_time: { $gte: endTime } },
+      // Case 3: New leave completely contains an existing leave
+      { start_time: { $gte: startTime }, end_time: { $lte: endTime } }
+    ]
+  });
+  
+  if (overlappingLeaves.length === 0) {
+    return { isOverlapping: false };
+  }
+  
+  // Check if the exact same leave exists (for updating)
+  const exactDuplicate = overlappingLeaves.find(leave => 
+    leave.category === newCategory && 
+    leave.start_time.getTime() === startTime.getTime() && 
+    leave.end_time.getTime() === endTime.getTime()
+  );
+  
+  if (exactDuplicate) {
+    return { 
+      isOverlapping: true, 
+      existingLeave: exactDuplicate,
+      isExactDuplicate: true
+    };
+  }
+  
+  // Now handle specific conflict cases
+  for (const leave of overlappingLeaves) {
+    // If there's already a FDL on any day that overlaps with this request
+    if (leave.category === 'FDL') {
+      const fdlDate = new Date(leave.start_time);
+      return { 
+        isOverlapping: true, 
+        message: `Cannot approve this request. You already have a Full Day Leave on ${formatDate(fdlDate)}.` 
+      };
+    }
+    
+    // If requesting FDL but already have other types of leave on that day
+    if (newCategory === 'FDL') {
+      return { 
+        isOverlapping: true, 
+        message: `Cannot approve Full Day Leave. You already have ${leave.category} scheduled from ${formatDate(leave.start_time)} to ${formatDate(leave.end_time)}.` 
+      };
+    }
+    
+    // Handle half-day leave conflicts
+    if ((newCategory === 'HDL' || leave.category === 'HDL') && 
+        isSameDay(new Date(startTime), new Date(leave.start_time))) {
+      // Check if they're AM/PM compatible (would need additional logic to determine AM/PM)
+      // For now, we'll assume any HDL on same day conflicts
+      return { 
+        isOverlapping: true, 
+        message: `Cannot approve this Half Day Leave. You already have ${leave.category} scheduled on ${formatDate(leave.start_time)}.` 
+      };
+    }
+    
+    // Handle LTO (Late To Office) and LE (Leaving Early) conflicts
+    if ((newCategory === 'LTO' || newCategory === 'LE') && 
+        (leave.category === 'LTO' || leave.category === 'LE') &&
+        isSameDay(new Date(startTime), new Date(leave.start_time))) {
+      return { 
+        isOverlapping: true, 
+        message: `Cannot approve this request. You already have ${leave.category} scheduled on ${formatDate(leave.start_time)}.` 
+      };
+    }
+    
+    // WFH and OOO conflicts - they can't overlap with any other leave type
+    if (newCategory === 'WFH' || newCategory === 'OOO' || 
+        leave.category === 'WFH' || leave.category === 'OOO') {
+      return { 
+        isOverlapping: true, 
+        message: `Cannot approve this request. It conflicts with your existing ${leave.category} from ${formatDate(leave.start_time)} to ${formatDate(leave.end_time)}.` 
+      };
+    }
+  }
+  
+  // Generic overlap response if none of the specific cases matched
+  return { 
+    isOverlapping: true, 
+    message: `Cannot approve this request. It overlaps with one or more of your existing leaves.` 
+  };
+}
+
+// Helper function to normalize leave timings based on category
+function normalizeLeaveTimings(startTime, endTime, category) {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  
+  switch(category) {
+    case 'FDL':
+      // Full day leave: 9 AM to 6 PM
+      start.setHours(9, 0, 0, 0);
+      end.setHours(18, 0, 0, 0);
+      break;
+    case 'HDL':
+      // Half day leave: Either 9 AM to 1 PM or 1 PM to 6 PM
+      // For simplicity, assume 9 AM to 1 PM if not specified
+      start.setHours(9, 0, 0, 0);
+      end.setHours(13, 0, 0, 0);
+      break;
+    case 'LTO':
+      // Late to office: Assume arriving by 11 AM
+      start.setHours(9, 0, 0, 0);
+      end.setHours(11, 0, 0, 0);
+      break;
+    case 'LE':
+      // Leaving early: Assume leaving at 4 PM
+      start.setHours(16, 0, 0, 0);
+      end.setHours(18, 0, 0, 0);
+      break;
+    case 'WFH':
+    case 'OOO':
+      // Full day: 9 AM to 6 PM
+      start.setHours(9, 0, 0, 0);
+      end.setHours(18, 0, 0, 0);
+      break;
+  }
+  
+  return { startTime: start, endTime: end };
+}
+
 // Listen for messages and save them to MongoDB
 app.event("message", async ({ event, say }) => {
   try {
     if (!event.subtype) {
-      // Regular new message flow - unchanged
       console.log(`📩 Message from ${event.user}: ${event.text}`);
       const userInput = event.text.trim();
       
@@ -162,22 +294,34 @@ app.event("message", async ({ event, say }) => {
           const startDateString = formatDate(obj.start_time);
           const endDateString = formatDate(obj.end_time);
           
-          // Check for existing record with the same category and time
-          const existingRecord = await Message.findOne({
-            category: obj.category,
-            start_time: obj.start_time,
-            end_time: obj.end_time,
-            user: event.user
-          });
-
-          if (existingRecord) {
-            await Message.updateOne({ _id: existingRecord._id }, { $set: obj });
-            say(`Updated existing leave record for ${obj.username}.`);
-          } else {
-            const leave = await Message.insertOne(obj);
-            say(
-              `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`
+          try {
+            // Check for any overlapping leaves
+            const overlapCheck = await checkForOverlappingLeaves(
+              event.user, 
+              new Date(obj.start_time), 
+              new Date(obj.end_time),
+              obj.category
             );
+            
+            if (overlapCheck.isOverlapping) {
+              // Handle exact duplicate for update
+              if (overlapCheck.isExactDuplicate) {
+                await Message.updateOne({ _id: overlapCheck.existingLeave._id }, { $set: obj });
+                say(`Updated existing ${obj.category} record for ${obj.username} from ${startDateString} to ${endDateString}.`);
+              } else {
+                // Handle conflict case
+                say(overlapCheck.message);
+              }
+            } else {
+              // No conflicts, create new leave
+              const leave = await Message.create(obj);
+              say(
+                `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`
+              );
+            }
+          } catch (error) {
+            console.error("Error checking for overlapping leaves:", error);
+            say("Sorry, there was an error processing your leave request. Please try again.");
           }
         } else if (obj.errMessage && obj.errMessage.length) {
           say(obj.errMessage);
@@ -309,6 +453,7 @@ app.event("message", async ({ event, say }) => {
     }
   } catch (error) {
     console.error("❌ Error handling message:", error);
+    say("Sorry, there was an error processing your leave request. Please try again.");
   }
 });
 
