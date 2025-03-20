@@ -13,6 +13,33 @@ const { executeMongooseQueryEval } = require("./mongo.query");
 
 const now = new Date();
 
+const categoryEmoji = {
+  'WFH': {
+    emoji: '🏠',
+    full: "Work From Home"
+  },
+  'FDL': {
+    emoji: '🏖️',
+    full: "Full Day Leave"
+  },
+  'OOO': {
+    emoji: '🛣️',
+    full: "Out of office"
+  },
+  'LTO': {
+    emoji: '🏃‍♂️‍➡️',
+    full: "Late to office"
+  },
+  'LE': {
+    emoji: '🏃',
+    full: "Leaving Early"
+  },
+  'HDL': {
+    emoji: '🌴',
+    full: "Half day leave"
+  },
+};
+
 function localDate(date){
   return new Date(date).toLocaleString(
     "en-GB",
@@ -47,32 +74,7 @@ function leaveResponse(obj, v){
   }
 }
 
-const categoryEmoji = {
-  'WFH': {
-    emoji: '🏠',
-    full: "Work From Home"
-  },
-  'FDL': {
-    emoji: '🏖️',
-    full: "Full Day Leave"
-  },
-  'OOO': {
-    emoji: '🛣️',
-    full: "Out of office"
-  },
-  'LTO': {
-    emoji: '🏃‍♂️‍➡️',
-    full: "Late to office"
-  },
-  'LE': {
-    emoji: '🏃',
-    full: "Leaving Early"
-  },
-  'HDL': {
-    emoji: '🌴',
-    full: "Half day leave"
-  },
-};
+
 
 // Initialize Slack App
 const app = new App({
@@ -136,84 +138,310 @@ function formatResults(results) {
 app.event("message", async ({ event, say }) => {
   try {
     if (!event.subtype) {
+      // Regular new message flow - unchanged
       console.log(`📩 Message from ${event.user}: ${event.text}`);
-
       const userInput = event.text.trim();
-
+      
       const res = await chatWithGeminiCategory(userInput);
       const username = await getUserName(event.user);
       const channelname = await getChannelName(event.channel);
 
-      // console.log(res);
-
+      // Add user and channel info to each response object
       res.forEach((obj) => {
         obj.user = event.user;
         obj.channel = event.channel;
         obj.username = username;
         obj.channelname = channelname;
+        // obj.original = userInput;
+        // obj.time = new Date();
       });
 
-      // Store valid responses in MongoDB
-
+      // Process valid responses
       for (const obj of res) {
-        const startDateString = new Date(obj.start_time).toLocaleString(
-          "en-GB",
-          {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: true,
-          }
-        );
-        const endDateString = new Date(obj.end_time).toLocaleString("en-GB", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: true,
-        });
-
         if (obj["is_valid"] && obj.category !== 'UNKNOWN') {
+          const startDateString = formatDate(obj.start_time);
+          const endDateString = formatDate(obj.end_time);
+          
           // Check for existing record with the same category and time
           const existingRecord = await Message.findOne({
             category: obj.category,
             start_time: obj.start_time,
             end_time: obj.end_time,
+            user: event.user
           });
 
           if (existingRecord) {
-            // Update the existing record
             await Message.updateOne({ _id: existingRecord._id }, { $set: obj });
             say(`Updated existing leave record for ${obj.username}.`);
           } else {
-            // Insert new record
             const leave = await Message.insertOne(obj);
             say(
-              `*Leave Notification*\n👨‍💻 *Name:* ${
-                obj.username
-              }\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${
-                obj.duration
-              }\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${
-                obj.reason || "Not specified"
-              }\n🪪 *LeaveId:* ${leave._id}`
+              `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`
             );
           }
-        } else if (obj.errMessage.length) {
+        } else if (obj.errMessage && obj.errMessage.length) {
           say(obj.errMessage);
         }
       }
-
-      // console.log(res);
+    }
+    else if (event.subtype === "message_changed") {
+      const oldMessage = event.previous_message.text.trim();
+      const newMessage = event.message.text.trim();
+      const userId = event.message.user;
+      const channelId = event.channel;
+      const now = new Date();
+      
+      // Process the edited message
+      const newLeaveRequests = await chatWithGeminiCategory(newMessage);
+      const username = await getUserName(userId);
+      const channelname = await getChannelName(channelId);
+      
+      // Add user and channel info to each new leave request
+      newLeaveRequests.forEach((obj) => {
+        obj.user = userId;
+        obj.channel = channelId;
+        obj.username = username;
+        obj.channelname = channelname;
+        // obj.original = newMessage;
+        // obj.time = now;
+      });
+      
+      // Find leaves associated with the original message
+      const existingLeaves = await Message.find({ 
+        user: userId, 
+        original: oldMessage 
+      });
+      
+      // Split existing leaves into past and current/future leaves
+      const pastLeaves = existingLeaves.filter(leave => leave.end_time < now);
+      const currentOrFutureLeaves = existingLeaves.filter(leave => leave.end_time >= now);
+      
+      // Handle cancellation requests - but NEVER delete past leaves
+      if (newMessage.toLowerCase().includes("cancel") || newMessage.trim() === "") {
+        if (pastLeaves.length > 0) {
+          say(`Cannot cancel ${pastLeaves.length} past leave record(s) as they have already ended.`);
+        }
+        
+        for (const leave of currentOrFutureLeaves) {
+          await Message.deleteOne({ _id: leave._id });
+        }
+        
+        if (currentOrFutureLeaves.length > 0) {
+          say(`${currentOrFutureLeaves.length} current/future leave record(s) cancelled for ${username}.`);
+        }
+        return;
+      }
+      
+      // Check for valid leave requests in the edited message
+      const validNewRequests = newLeaveRequests.filter(req => 
+        req.is_valid && req.category !== 'UNKNOWN'
+      );
+      
+      // If no valid new leave requests, and there were existing current/future leaves, assume cancellation
+      if (validNewRequests.length === 0 && currentOrFutureLeaves.length > 0) {
+        for (const leave of currentOrFutureLeaves) {
+          await Message.deleteOne({ _id: leave._id });
+        }
+        say(`Previous current/future leave record(s) have been removed as the new message doesn't contain valid leave information.`);
+        
+        if (pastLeaves.length > 0) {
+          say(`Note: ${pastLeaves.length} past leave record(s) have been preserved in the system.`);
+        }
+        return;
+      }
+      
+      // Notify about past leaves that can't be modified
+      if (pastLeaves.length > 0) {
+        const pastLeaveInfo = pastLeaves.map(leave => 
+          `• ${leave.category} (${formatDate(leave.start_time)} to ${formatDate(leave.end_time)})`
+        ).join('\n');
+        
+        say(`The following past leave record(s) cannot be modified as they have already ended:\n${pastLeaveInfo}`);
+      }
+      
+      // Process each current/future leave
+      for (const existingLeave of currentOrFutureLeaves) {
+        // Try to find a matching leave in the new requests (same category)
+        const matchingNewRequest = validNewRequests.find(req => 
+          req.category === existingLeave.category
+        );
+        
+        if (matchingNewRequest) {
+          // Apply category-specific update logic
+          let updatedLeave = handleCategorySpecificUpdate(existingLeave, matchingNewRequest, new Date());
+          
+          // Update the existing leave with new details
+          await Message.updateOne(
+            { _id: existingLeave._id }, 
+            { $set: updatedLeave }
+          );
+          
+          const startDateString = formatDate(updatedLeave.start_time);
+          const endDateString = formatDate(updatedLeave.end_time);
+          console.log('category:', updatedLeave.category);
+          say(
+            `*Leave Updated*\n👨‍💻 *Name:* ${username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${updatedLeave.duration}\n${categoryEmoji[updatedLeave.category].emoji} *Type:* ${updatedLeave.category} (${categoryEmoji[updatedLeave.category].full})\n📝 *Reason:* ${updatedLeave.reason || "Not specified"}\n🪪 *LeaveId:* ${existingLeave._id}`
+          );
+          
+          // Remove the processed request from validNewRequests
+          const index = validNewRequests.indexOf(matchingNewRequest);
+          if (index > -1) {
+            validNewRequests.splice(index, 1);
+          }
+        } else {
+          // No matching category found in new requests, delete this leave (since it's not past)
+          await Message.deleteOne({ _id: existingLeave._id });
+          say(`Previous ${existingLeave.category} leave has been removed.`);
+        }
+      }
+      
+      // Process any remaining new leave requests that didn't match existing ones
+      for (const newRequest of validNewRequests) {
+        const startDateString = formatDate(newRequest.start_time);
+        const endDateString = formatDate(newRequest.end_time);
+        
+        // Insert as a new leave
+        const leave = await Message.insertOne(newRequest);
+        say(
+          `*New Leave Added*\n👨‍💻 *Name:* ${username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${newRequest.duration}\n${categoryEmoji[newRequest.category].emoji} *Type:* ${newRequest.category} (${categoryEmoji[newRequest.category].full})\n📝 *Reason:* ${newRequest.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`
+        );
+      }
     }
   } catch (error) {
     console.error("❌ Error handling message:", error);
   }
 });
+
+/**
+ * Handles category-specific update logic for different types of leaves
+ * 
+ * @param {Object} existingLeave - The existing leave record in the database
+ * @param {Object} newRequest - The new leave request from the edited message
+ * @param {Date} now - The current date/time
+ * @returns {Object} The updated leave object to be saved
+ */
+function handleCategorySpecificUpdate(existingLeave, newRequest, now) {
+  // Create a copy of the existing leave to modify
+  
+  const updatedLeave = { ...existingLeave._doc };
+  console.log('updated Leave1', updatedLeave);
+
+  // updatedLeave.reason = existingLeave.reason;
+
+  
+  // Update common fields regardless of category
+  updatedLeave.reason = newRequest.reason;
+  updatedLeave.original = newRequest.original;
+  updatedLeave.time = now;
+  
+  switch (existingLeave.category) {
+    case "OOO": // Out of Office - short duration absence
+    case "LTO": // Late to Office
+    case "LE":  // Leaving Early
+    case "AFK": // Away From Keyboard
+      // For short-duration leaves, if already started, preserve start time and only modify end time
+      if (existingLeave.start_time < now) {
+        updatedLeave.end_time = newRequest.end_time;
+        // Recalculate duration based on preserved start time and new end time
+        updatedLeave.duration = calculateDuration(existingLeave.start_time, newRequest.end_time);
+      } else {
+        // If not started yet, can update both start and end times
+        updatedLeave.start_time = newRequest.start_time;
+        updatedLeave.end_time = newRequest.end_time;
+        updatedLeave.duration = newRequest.duration;
+      }
+      break;
+      
+    case "FDL": // Full Day Leave
+    case "HDL": // Half Day Leave
+    case "WFH": // Work From Home
+      // For day-based leaves, allow full replacement of dates
+      // These typically represent full calendar days and should be updated as a unit
+      updatedLeave.start_time = newRequest.start_time;
+      updatedLeave.end_time = newRequest.end_time;
+      updatedLeave.duration = newRequest.duration;
+      
+      // Exception: If a day-based leave has already started and continues to future
+      if (existingLeave.start_time < now && existingLeave.end_time > now) {
+        // Special case: If user is modifying a multi-day leave that's in progress
+        const existingStartDay = new Date(existingLeave.start_time).setHours(0, 0, 0, 0);
+        const newStartDay = new Date(newRequest.start_time).setHours(0, 0, 0, 0);
+        
+        // If the user is trying to change the start date of an in-progress leave
+        if (existingStartDay !== newStartDay) {
+          // Keep the original start date since it's already in progress
+          updatedLeave.start_time = existingLeave.start_time;
+          // But allow the end date to be modified
+          updatedLeave.end_time = newRequest.end_time;
+          // Recalculate duration
+          updatedLeave.duration = calculateDuration(existingLeave.start_time, newRequest.end_time);
+        }
+      }
+      break;
+      
+    default:
+      // For any other category, allow full replacement
+      updatedLeave.start_time = newRequest.start_time;
+      updatedLeave.end_time = newRequest.end_time;
+      updatedLeave.duration = newRequest.duration;
+  }
+  
+  console.log('updated Leave2', updatedLeave);
+  return updatedLeave;
+}
+
+/**
+ * Calculates a human-readable duration between two dates
+ * 
+ * @param {Date} startTime - The start time
+ * @param {Date} endTime - The end time
+ * @returns {String} Human-readable duration
+ */
+function calculateDuration(startTime, endTime) {
+  const durationMs = endTime - startTime;
+  const durationMinutes = Math.round(durationMs / (1000 * 60));
+  
+  if (durationMinutes < 60) {
+    return `${durationMinutes} minute${durationMinutes !== 1 ? 's' : ''}`;
+  }
+  
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  
+  // Calculate days for longer durations
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  
+  if (days > 0) {
+    if (remainingHours === 0 && minutes === 0) {
+      return `${days} day${days !== 1 ? 's' : ''}`;
+    } else if (minutes === 0) {
+      return `${days} day${days !== 1 ? 's' : ''} ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+    } else {
+      return `${days} day${days !== 1 ? 's' : ''} ${remainingHours} hour${remainingHours !== 1 ? 's' : ''} ${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    }
+  }
+  
+  if (minutes === 0) {
+    return `${hours} hour${hours !== 1 ? 's' : ''}`;
+  }
+  
+  return `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} minute${minutes !== 1 ? 's' : ''}`;
+}
+
+// Helper function for date formatting
+function formatDate(date) {
+  return new Date(date).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
 
 async function queryHandler({ command, ack, respond }) {
   try {

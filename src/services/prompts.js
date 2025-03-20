@@ -1,14 +1,21 @@
-const now = new Date()
-const currentTime = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-const currentDay = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+
+function currentTime(){
+  const now = new Date()
+  return now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+}
+
+function currentDay(){
+  const now = new Date()
+  return now.toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "long" });
+}
 
 function geminiCategoryPromptFinal(prompt){
   const finalMsg = `
 You are an AI assistant specializing in leave management for a IT company. Your task is to analyze messages from employees about their leave, work from home, or other office-related absences, and categorize them according to specific rules.
 
 Here is the current context:
-<current_timestamp>${currentTime}</current_timestamp>
-<current_day>${currentDay}</current_day>
+<current_timestamp>${currentTime()}</current_timestamp>
+<current_day>${currentDay()}</current_day>
 
 You will be analyzing the following message:
 <user_message>${prompt}</user_message>
@@ -116,7 +123,8 @@ Remember:
 - If providing an error message, make it user-friendly and possibly include an emoji for a friendly tone.
 - Only specify a reason if it's explicitly mentioned in the message. 
 - Ensure "is_valid" is set to false if the message is not related to leave or have "UNKNOWN" category.
-- Always consider the start_time and end_time in office hours start_time >= 9 and end_time <= 6
+- Always consider the start_time and end_time in office hours start_time >= 9 and end_time <= 6.
+- The original message must be same as user message, do not break or modify it.
 - Always follow the given format <leave_analysis></leave_analysis><response></response>
 
 Now, please analyze the given message and provide your response.
@@ -130,8 +138,8 @@ function geminiQueryPromptFinal(prompt){
 You are an AI assistant specialized in converting natural language queries about employee leave and attendance into MongoDB Mongoose queries. Your task is to generate accurate and efficient queries based on the user's input.
 
 Here is the current context:
-<current_timestamp>${currentTime}</current_timestamp>
-<current_day>${currentDay}</current_day>
+<current_timestamp>${currentTime()}</current_timestamp>
+<current_day>${currentDay()}</current_day>
 <time_zone>Asia/Kolkata</time_zone>
 All the times follows Indian Standard Time (IST)
 
@@ -818,8 +826,8 @@ function geminiResponsePromptFinal(prompt){
 You are an AI assistant integrated with a Slack bot, designed to help employees and managers with queries about leave and attendance. Your task is to generate clear, concise, and friendly responses based on user queries and MongoDB data.
 
 Here is the current context:
-<current_timestamp>${currentTime}</current_timestamp>
-<current_day>${currentDay}</current_day>
+<current_timestamp>${currentTime()}</current_timestamp>
+<current_day>${currentDay()}</current_day>
 <time_zone>Asia/Kolkata</time_zone>
 All the times follows Indian Standard Time (IST)
 
