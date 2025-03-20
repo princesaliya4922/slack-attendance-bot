@@ -116,6 +116,7 @@ Remember:
 - If providing an error message, make it user-friendly and possibly include an emoji for a friendly tone.
 - Only specify a reason if it's explicitly mentioned in the message. 
 - Ensure "is_valid" is set to false if the message is not related to leave or have "UNKNOWN" category.
+- Always consider the start_time and end_time in office hours start_time >= 9 and end_time <= 6
 - Always follow the given format <leave_analysis></leave_analysis><response></response>
 
 Now, please analyze the given message and provide your response.

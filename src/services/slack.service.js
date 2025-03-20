@@ -11,6 +11,42 @@ const { executeMongooseQueryEval } = require("./mongo.query");
 
 // console.log(env.SLACK_APP_TOKEN)
 
+const now = new Date();
+
+function localDate(date){
+  return new Date(date).toLocaleString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    }
+  );
+}
+
+function leaveResponse(obj, v){
+  if(v=='v1' || v==undefined){
+    return `*Leave Notification*\n👨‍💻 *Name:* ${
+                obj.username
+              }\n📅 *From:* ${localDate(obj.start_time)}\n📅 *To:* ${localDate(obj.end_time)}\n⏳ *duration:* ${
+                obj.duration
+              }\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${
+                obj.reason || "Not specified"
+              }\n`
+  }
+  else if(v=='v2'){
+    return `👨‍💻 *Name:* ${
+      obj.username
+    }\n📅 *From:* ${localDate(obj.start_time)}\n📅 *To:* ${localDate(obj.end_time)}\n⏳ *duration:* ${
+      obj.duration
+    }\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})`
+  }
+}
+
 const categoryEmoji = {
   'WFH': {
     emoji: '🏠',
@@ -156,7 +192,7 @@ app.event("message", async ({ event, say }) => {
             say(`Updated existing leave record for ${obj.username}.`);
           } else {
             // Insert new record
-            await Message.insertOne(obj);
+            const leave = await Message.insertOne(obj);
             say(
               `*Leave Notification*\n👨‍💻 *Name:* ${
                 obj.username
@@ -164,7 +200,7 @@ app.event("message", async ({ event, say }) => {
                 obj.duration
               }\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${
                 obj.reason || "Not specified"
-              }\n`
+              }\n🪪 *LeaveId:* ${leave._id}`
             );
           }
         } else if (obj.errMessage.length) {
@@ -217,7 +253,58 @@ async function queryHandler({ command, ack, respond }) {
   }
 }
 
+async function handleCancel({ command, ack, respond, client }) {
+  try {
+    await ack(); // Acknowledge the command request
+
+    const queryText = command.text.trim();
+    if (!queryText) {
+      await respond(
+        "Please provide a leaveId. Example: `/cancelleave leaveId`"
+      );
+      return;
+    }
+
+    // Generate a MongoDB Query using OpenAI
+    const userId = command.user_id; // Slack User ID
+    const username = command.user_name;
+    const name = await getUserName(userId);
+
+    const res = await Message.findById('67daa74080e6b8e91288a5e8');
+    console.log(res)
+
+    console.log(`id:${queryText.trim()}`);
+    const leave = await Message.findById(queryText);
+    console.log(leave);
+    if(!leave){
+      await respond(`Please provide valid leave id`);
+      return;
+    }
+    if(leave.user !== userId){
+      await respond(`You don't have permission to cancel this leave.`);
+      return;
+    }
+
+    if(leave.start_time.getTime() < now.getTime()){
+      await respond(`You can't cancel past leaves`);
+      return;
+    }
+    
+    await Message.deleteOne({ _id: queryText });
+
+    await client.chat.postMessage({
+      channel: "#bot-testing", // Replace with the desired channel
+      text: `⛔️ <@${userId}> *cancelled following leave.*⛔️\n\n${leaveResponse(leave,'v2')}\n\nThe leave has been cancelled ✅`,
+    });  
+    
+  } catch (error) {
+    console.error("❌ Error handling /cancelleave command:", error);
+    await respond("An error occurred while processing your query.");
+  }
+}
+
 app.command("/latequery", queryHandler);
 app.command("/query", queryHandler);
+app.command('/cancelleave', handleCancel)
 
 module.exports = app;
