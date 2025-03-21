@@ -134,6 +134,247 @@ function formatResults(results) {
     .join("\n");
 }
 
+// Define priority levels for different leave categories
+const PRIORITY_LEVELS = {
+  'FDL': 5, // Highest priority
+  'HDL': 4,
+  'LTO': 3,
+  'LE': 3,  // Same priority as LTO
+  'WFH': 2,
+  'OOO': 1,
+  'UNKNOWN': 0 // Lowest priority
+};
+
+/**
+ * Checks if two date ranges overlap
+ * @param {Date} start1 - Start time of first range
+ * @param {Date} end1 - End time of first range
+ * @param {Date} start2 - Start time of second range
+ * @param {Date} end2 - End time of second range
+ * @returns {boolean} - Whether the ranges overlap
+ */
+function datesOverlap(start1, end1, start2, end2) {
+  return start1 <= end2 && start2 <= end1;
+}
+
+/**
+ * Find all overlapping leave entries for a user
+ * @param {Object} newLeave - The new leave entry to check
+ * @returns {Promise<Array>} - Array of overlapping leave entries
+ */
+async function findOverlappingLeaves(newLeave) {
+  const startOfDay = new Date(newLeave.start_time);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date(newLeave.end_time);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // Find all leaves for this user on the same day(s)
+  const potentialOverlaps = await Message.find({
+    user: newLeave.user,
+    $or: [
+      // Leave starts or ends on the same day
+      {
+        start_time: { $gte: startOfDay, $lte: endOfDay }
+      },
+      {
+        end_time: { $gte: startOfDay, $lte: endOfDay }
+      },
+      // Leave spans across the day
+      {
+        start_time: { $lte: startOfDay },
+        end_time: { $gte: endOfDay }
+      }
+    ]
+  });
+
+  // Filter to only those that actually overlap in time
+  return potentialOverlaps.filter(existingLeave => 
+    datesOverlap(
+      new Date(newLeave.start_time), 
+      new Date(newLeave.end_time),
+      new Date(existingLeave.start_time), 
+      new Date(existingLeave.end_time)
+    )
+  );
+}
+
+/**
+ * Handle overlapping leave entries based on priority rules
+ * @param {Object} newLeave - The new leave entry
+ * @param {Array} overlappingLeaves - Array of existing overlapping leave entries
+ * @returns {Object} - Result with action to take and message
+ */
+async function handleOverlappingLeaves(newLeave, overlappingLeaves) {
+  if (!overlappingLeaves.length) {
+    return { action: 'INSERT', message: null };
+  }
+
+  const newLeavePriority = PRIORITY_LEVELS[newLeave.category] || 0;
+  
+  // Check if any existing leave has higher priority
+  const higherPriorityLeaves = overlappingLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) > newLeavePriority
+  );
+
+  if (higherPriorityLeaves.length > 0) {
+    // Sort by priority to get the highest priority existing leave
+    higherPriorityLeaves.sort((a, b) => 
+      (PRIORITY_LEVELS[b.category] || 0) - (PRIORITY_LEVELS[a.category] || 0)
+    );
+    
+    const highestPriorityLeave = higherPriorityLeaves[0];
+    return {
+      action: 'REJECT',
+      message: `Cannot add ${newLeave.category} as it conflicts with an existing ${highestPriorityLeave.category} (${formatDate(highestPriorityLeave.start_time)} to ${formatDate(highestPriorityLeave.end_time)})`
+    };
+  }
+
+  // If new leave has higher or equal priority
+  // Get existing leaves that need to be removed or updated
+  const lowerOrEqualPriorityLeaves = overlappingLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) <= newLeavePriority
+  );
+
+  if (lowerOrEqualPriorityLeaves.length > 0) {
+    // For each overlapping leave, decide what to do
+    for (const existingLeave of lowerOrEqualPriorityLeaves) {
+      // If same category and exact same time, just update
+      if (existingLeave.category === newLeave.category && 
+          existingLeave.start_time.getTime() === new Date(newLeave.start_time).getTime() && 
+          existingLeave.end_time.getTime() === new Date(newLeave.end_time).getTime()) {
+        await Message.updateOne({ _id: existingLeave._id }, { $set: newLeave });
+      } else {
+        // If completely overlapping, remove the existing leave
+        await Message.deleteOne({ _id: existingLeave._id });
+      }
+    }
+    
+    return {
+      action: 'INSERT',
+      message: `Replaced ${lowerOrEqualPriorityLeaves.length} conflicting leave(s) with ${newLeave.category}`
+    };
+  }
+
+  // This shouldn't happen based on our logic, but just in case
+  return { action: 'INSERT', message: null };
+}
+
+/**
+ * Checks if a leave spans a full workday
+ * @param {Date} start - Start time
+ * @param {Date} end - End time
+ * @returns {boolean} - Whether this is a full workday leave
+ */
+function isFullWorkDay(start, end) {
+  const startHour = start.getHours();
+  const endHour = end.getHours();
+  const endMinutes = end.getMinutes();
+  
+  // Check if the leave covers standard work hours (e.g., 9 AM to 6 PM)
+  // Adjust as needed for your company's work hours
+  return startHour <= 9 && (endHour > 17 || (endHour === 17 && endMinutes > 0));
+}
+
+/**
+ * Get a summary of all leaves for a user on a specific date
+ * @param {string} userId - User ID
+ * @param {Date} date - Date to check
+ * @returns {Promise<Array>} - Array of leave entries
+ */
+async function getLeavesForDate(userId, date) {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  return await Message.find({
+    user: userId,
+    $or: [
+      {
+        start_time: { $gte: startOfDay, $lte: endOfDay }
+      },
+      {
+        end_time: { $gte: startOfDay, $lte: endOfDay }
+      },
+      {
+        start_time: { $lte: startOfDay },
+        end_time: { $gte: endOfDay }
+      }
+    ]
+  }).sort({ start_time: 1 });
+}
+
+/**
+ * Check if two leave types are mutually exclusive
+ * For example, you can't have both HDL and FDL on the same day
+ * @param {string} category1 - First leave category
+ * @param {string} category2 - Second leave category
+ * @returns {boolean} - Whether the leave types are mutually exclusive
+ */
+function areMutuallyExclusive(category1, category2) {
+  // Define pairs of leave types that can't coexist
+  const exclusivePairs = [
+    ['FDL', 'HDL'],
+    ['FDL', 'LTO'],
+    ['FDL', 'LE'],
+    ['FDL', 'WFH'],
+    ['FDL', 'OOO'],
+    ['HDL', 'WFH'],
+    // Add more pairs as needed
+  ];
+  
+  return exclusivePairs.some(pair => 
+    (pair[0] === category1 && pair[1] === category2) || 
+    (pair[0] === category2 && pair[1] === category1)
+  );
+}
+
+/**
+ * Validate a leave entry against business rules
+ * @param {Object} leave - Leave entry to validate
+ * @returns {Object} - Validation result with isValid and message
+ */
+async function validateLeaveAgainstRules(leave) {
+  // Check if there's a FDL already on this day
+  const existingLeaves = await getLeavesForDate(leave.user, new Date(leave.start_time));
+  
+  // Check if there's already a FDL
+  const existingFDL = existingLeaves.find(l => l.category === 'FDL');
+  if (existingFDL && leave.category !== 'FDL') {
+    return {
+      isValid: false,
+      message: `Cannot add ${leave.category} as you already have a Full Day Leave on ${formatDate(existingFDL.start_time)}`
+    };
+  }
+  
+  // Check if adding FDL when specific types already exist
+  if (leave.category === 'FDL') {
+    // FDL overrides everything, so this is always valid
+    return { isValid: true, message: null };
+  }
+  
+  // Check if adding HDL when not allowed
+  if (leave.category === 'HDL') {
+    const conflictingLeaves = existingLeaves.filter(l => 
+      areMutuallyExclusive('HDL', l.category) && 
+      l._id.toString() !== (leave._id ? leave._id.toString() : '')
+    );
+    
+    if (conflictingLeaves.length > 0) {
+      return {
+        isValid: false,
+        message: `Cannot add Half Day Leave as you already have ${conflictingLeaves[0].category} on this day`
+      };
+    }
+  }
+  
+  // Additional validation rules can be added here
+  
+  return { isValid: true, message: null };
+}
+
 // Listen for messages and save them to MongoDB
 app.event("message", async ({ event, say }) => {
   try {
@@ -152,32 +393,52 @@ app.event("message", async ({ event, say }) => {
         obj.channel = event.channel;
         obj.username = username;
         obj.channelname = channelname;
-        // obj.original = userInput;
-        // obj.time = new Date();
+        obj.original = userInput;
+        obj.time = new Date();
       });
 
       // Process valid responses
       for (const obj of res) {
         if (obj["is_valid"] && obj.category !== 'UNKNOWN') {
+          // First run business rule validation
+          const validationResult = await validateLeaveAgainstRules(obj);
+          if (!validationResult.isValid) {
+            say(`*Unable to register leave*\n${validationResult.message}`);
+            continue;
+          }
+          
           const startDateString = formatDate(obj.start_time);
           const endDateString = formatDate(obj.end_time);
           
-          // Check for existing record with the same category and time
-          const existingRecord = await Message.findOne({
-            category: obj.category,
-            start_time: obj.start_time,
-            end_time: obj.end_time,
-            user: event.user
-          });
-
-          if (existingRecord) {
-            await Message.updateOne({ _id: existingRecord._id }, { $set: obj });
-            say(`Updated existing leave record for ${obj.username}.`);
-          } else {
+          // Find any overlapping leaves
+          const overlappingLeaves = await findOverlappingLeaves(obj);
+          
+          // Handle overlap based on priority rules
+          const overlapResult = await handleOverlappingLeaves(obj, overlappingLeaves);
+          
+          // Take action based on the result
+          if (overlapResult.action === 'INSERT') {
             const leave = await Message.insertOne(obj);
-            say(
-              `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`
-            );
+            
+            let notificationMessage = `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`;
+            
+            // Add information about replaced leaves if applicable
+            if (overlapResult.message) {
+              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
+            }
+            
+            // If this is a high-priority leave that affected other leaves, summarize what happened
+            if (overlapResult.message && overlappingLeaves.length > 0) {
+              const affectedCategories = [...new Set(overlappingLeaves.map(l => l.category))];
+              if (affectedCategories.length > 0) {
+                notificationMessage += `\nThis replaced: ${affectedCategories.join(', ')}`;
+              }
+            }
+            
+            say(notificationMessage);
+          } else if (overlapResult.action === 'REJECT') {
+            // Notify about rejection due to higher priority existing leave
+            say(`*Unable to register leave*\n${overlapResult.message}`);
           }
         } else if (obj.errMessage && obj.errMessage.length) {
           say(obj.errMessage);
