@@ -301,11 +301,15 @@ function isFullWorkDay(start, end) {
  * @returns {Promise<Array>} - Array of leave entries
  */
 async function getLeavesForDate(userId, date) {
+  if(date.getFullYear() == 2001){
+    date.setFullYear(new Date().getFullYear());
+  }
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
   
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
+
   
   return await Message.find({
     user: userId,
@@ -395,13 +399,56 @@ async function validateLeaveAgainstRules(leave) {
 
 // PRIORITY LEAVES ENDS
 
+async function getParentMessage(client, channelId, threadTs) {
+  try {
+    const result = await client.conversations.replies({
+      channel: channelId,
+      ts: threadTs, // Fetch entire thread
+    });
+
+    if (result.messages.length > 0) {
+      const parentMessage = result.messages[0]; // First message in the thread
+      return parentMessage.text.trim();
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error("❌ Error fetching parent message:", error);
+    return null;
+  }
+}
+
+
 // Listen for messages and save them to MongoDB
-app.event("message", async ({ event, say }) => {
+app.event("message", async ({ event, client, say }) => {
   try {
     if (!event.subtype) {
+      let userInput;
+      //Handling thread messages
+      if (event.thread_ts && event.thread_ts !== event.ts) {
+        const channelId = event.channel;
+        const threadTs = event.thread_ts;
+        const parentMessage = await getParentMessage(client, channelId, threadTs);
+        // This means the message is a reply inside a thread
+
+        console.log('thread: ', event.thread_ts);
+        console.log('Parent Message:',parentMessage);
+        console.log('Thread Msg:',event.text.trim());
+
+        if(event.text.trim() == '+1' || event.text.trim() == '+ 1' || event.text.trim() == '+' || event.text.trim() == '++'){
+          userInput = parentMessage;
+        }
+        else{
+          userInput = event.text.trim();
+        }
+      }
+      else{
+        userInput = event.text.trim();
+      }
+
       // Regular new message flow - unchanged
-      console.log(`📩 Message from ${event.user}: ${event.text}`);
-      const userInput = event.text.trim();
+      
+      console.log(`📩 Message from ${event.user}: ${userInput}`);
       
       const res = await chatWithGeminiCategory(userInput);
       const username = await getUserName(event.user);
@@ -602,6 +649,115 @@ app.event("message", async ({ event, say }) => {
   }
 });
 
+app.event("reaction_added", async ({ event, client, say }) => {
+  try {
+    console.log('Reaction Added');
+
+    const { user, reaction, item } = event;
+    const channelId = item.channel;
+    const messageTs = item.ts;
+    const username = await getUserName(user);
+
+    // console.log(user, username);
+    const result = await client.conversations.history({
+      channel: channelId,
+      latest: messageTs,
+      inclusive: true,
+      limit: 1,
+    });
+
+    if (result.messages.length === 0) {
+      console.log("⚠️ No message found for the reaction.");
+      return;
+    }
+    const originalMessage = result.messages[0].text;
+    console.log('Original', originalMessage);
+    console.log('Reaction', reaction);
+
+    if(reaction !== 'heavy_plus_sign') return;
+
+
+      //Actual flow ------- ************* ---------
+      let userInput = originalMessage;
+      console.log(`📩 Message from ${event.user}: ${userInput}`);
+      
+      const res = await chatWithGeminiCategory(userInput);
+      // const username = await getUserName(event.user);
+      const channelname = await getChannelName(channelId);
+
+      // Add user and channel info to each response object
+      res.forEach((obj) => {
+        obj.user = event.user;
+        obj.channel = channelId;
+        obj.username = username;
+        obj.channelname = channelname;
+        obj.original = userInput;
+        obj.time = new Date();
+      });
+
+      // Process valid responses
+      for (const obj of res) {
+        if (obj["is_valid"] && obj.category !== 'UNKNOWN') {
+          // First run business rule validation
+          const validationResult = await validateLeaveAgainstRules(obj);
+          if (!validationResult.isValid) {
+            say(`*Unable to register leave*\n${validationResult.message}`);
+            continue;
+          }
+          
+          const startDateString = formatDate(obj.start_time);
+          const endDateString = formatDate(obj.end_time);
+          
+          // Find any overlapping leaves
+          const overlappingLeaves = await findOverlappingLeaves(obj);
+          
+          // Handle overlap based on priority rules
+          const overlapResult = await handleOverlappingLeaves(obj, overlappingLeaves);
+          
+          // Take action based on the result
+          if (overlapResult.action === 'INSERT') {
+            const leave = await Message.insertOne(obj);
+            
+            let notificationMessage = `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`;
+            
+            // Add information about replaced leaves if applicable
+            if (overlapResult.message) {
+              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
+            }
+            
+            // If this is a high-priority leave that affected other leaves, summarize what happened
+            if (overlapResult.message && overlappingLeaves.length > 0) {
+              const affectedCategories = [...new Set(overlappingLeaves.map(l => l.category))];
+              if (affectedCategories.length > 0) {
+                notificationMessage += `\nThis replaced: ${affectedCategories.join(', ')}`;
+              }
+            }
+            
+            say(notificationMessage);
+          } else if (overlapResult.action === 'UPDATED') {
+            // For UPDATED action, we don't need to insert, just notify
+            let notificationMessage = `*Leave Updated*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${overlapResult.leaveId}`;
+            
+            if (overlapResult.message) {
+              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
+            }
+            
+            say(notificationMessage);
+          } else if (overlapResult.action === 'REJECT') {
+            // Notify about rejection due to higher priority existing leave
+            say(`*Unable to register leave*\n${overlapResult.message}`);
+          }
+        } else if (obj.errMessage && obj.errMessage.length) {
+          say(obj.errMessage);
+        }
+      }
+
+
+  } catch (error) {
+    console.error("❌ Error handling reaction:", error);
+  }
+});
+
 /**
  * Handles category-specific update logic for different types of leaves
  * 
@@ -720,7 +876,16 @@ function calculateDuration(startTime, endTime) {
 }
 
 // Helper function for date formatting
-function formatDate(date) {
+function formatDate(date, justDate) {
+
+  if(justDate){
+    return new Date(date).toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }
+
   return new Date(date).toLocaleString("en-GB", {
     day: "2-digit",
     month: "2-digit",
@@ -859,7 +1024,7 @@ app.command('/leaves', async ({ command, ack, respond }) => {
   });
   
   // Build the response message
-  let responseText = `*Leaves for ${username} on ${formatDate(targetDate)}*\n\n`;
+  let responseText = `*Leaves for ${username} on ${formatDate(targetDate, true)}*\n\n`;
   
   leaves.forEach((leave, index) => {
     const startTime = formatTime(new Date(leave.start_time));
