@@ -210,58 +210,281 @@ async function findOverlappingLeaves(newLeave) {
 async function handleOverlappingLeaves(newLeave, overlappingLeaves) {
   console.log('New leave: ', newLeave);
   console.log('Overlapping: ', overlappingLeaves);
+  
   if (!overlappingLeaves.length) {
-    return { action: 'INSERT', message: null };
+    return { action: 'INSERT', message: null, leavesToInsert: [newLeave] };
   }
 
   const newLeavePriority = PRIORITY_LEVELS[newLeave.category] || 0;
   
-  // Check if any existing leave has higher priority
-  const higherPriorityLeaves = overlappingLeaves.filter(leave => 
-    (PRIORITY_LEVELS[leave.category] || 0) >= newLeavePriority
-  );
-
-  if (higherPriorityLeaves.length > 0) {
-    // Sort by priority to get the highest priority existing leave
-    higherPriorityLeaves.sort((a, b) => 
-      (PRIORITY_LEVELS[b.category] || 0) - (PRIORITY_LEVELS[a.category] || 0)
-    );
-    
-    const highestPriorityLeave = higherPriorityLeaves[0];
-    return {
-      action: 'REJECT',
-      message: `Cannot add ${newLeave.category} as it conflicts with an existing ${highestPriorityLeave.category} (${formatDate(highestPriorityLeave.start_time)} to ${formatDate(highestPriorityLeave.end_time)})`
-    };
-  }
-
-  // If new leave has higher or equal priority
-  // Get existing leaves that need to be removed or updated
-  const lowerOrEqualPriorityLeaves = overlappingLeaves.filter(leave => 
-    (PRIORITY_LEVELS[leave.category] || 0) <= newLeavePriority
-  );
-
-  if (lowerOrEqualPriorityLeaves.length > 0) {
-    // For each overlapping leave, decide what to do
-    for (const existingLeave of lowerOrEqualPriorityLeaves) {
-      // If same category and exact same time, just update
-      if (existingLeave.category === newLeave.category && 
-          existingLeave.start_time.getTime() === new Date(newLeave.start_time).getTime() && 
-          existingLeave.end_time.getTime() === new Date(newLeave.end_time).getTime()) {
-        await Message.updateOne({ _id: existingLeave._id }, { $set: newLeave });
-      } else {
-        // If completely overlapping, remove the existing leave
-        await Message.deleteOne({ _id: existingLeave._id });
-      }
+  // Clone the new leave for potential modifications
+  const newLeaveStart = new Date(newLeave.start_time);
+  const newLeaveEnd = new Date(newLeave.end_time);
+  
+  // Handle FDL priority differently - it always replaces other leaves completely
+  if (newLeave.category === 'FDL') {
+    // Delete all overlapping leaves
+    for (const existingLeave of overlappingLeaves) {
+      await Message.deleteOne({ _id: existingLeave._id });
     }
     
     return {
       action: 'INSERT',
-      message: `Replaced ${lowerOrEqualPriorityLeaves.length} conflicting leave(s) with ${newLeave.category}`
+      message: `Replaced ${overlappingLeaves.length} conflicting leave(s) with ${newLeave.category}`,
+      leavesToInsert: [newLeave]
     };
   }
+  
+  // Sort overlapping leaves by priority (highest first)
+  const sortedOverlappingLeaves = [...overlappingLeaves].sort((a, b) => 
+    (PRIORITY_LEVELS[b.category] || 0) - (PRIORITY_LEVELS[a.category] || 0)
+  );
+  
+  // Check if any existing leave has higher priority
+  const higherPriorityLeaves = sortedOverlappingLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) > newLeavePriority
+  );
 
-  // This shouldn't happen based on our logic, but just in case
-  return { action: 'INSERT', message: null };
+  if (higherPriorityLeaves.length > 0) {
+    // Generate potential time segments for the new leave by cutting out higher priority leaves
+    const timeSegments = generateNonOverlappingSegments(
+      newLeaveStart, 
+      newLeaveEnd, 
+      higherPriorityLeaves
+    );
+    
+    if (timeSegments.length === 0) {
+      // New leave is completely covered by higher priority leaves
+      const highestPriorityLeave = higherPriorityLeaves[0];
+      return {
+        action: 'REJECT',
+        message: `Cannot add ${newLeave.category} as it conflicts with an existing ${highestPriorityLeave.category} (${formatDate(highestPriorityLeave.start_time)} to ${formatDate(highestPriorityLeave.end_time)})`,
+        leavesToInsert: []
+      };
+    } else {
+      // Create leaves for each non-overlapping segment
+      const segmentedLeaves = timeSegments.map(segment => ({
+        ...newLeave,
+        start_time: segment.start,
+        end_time: segment.end,
+        duration: calculateDuration(segment.start, segment.end)
+      }));
+      
+      // Only insert if there are valid segments with substantial duration (e.g., > 30 min)
+      const validSegments = segmentedLeaves.filter(leave => {
+        const durationMinutes = (new Date(leave.end_time) - new Date(leave.start_time)) / (1000 * 60);
+        return durationMinutes >= 30; // Minimum 30 minutes duration
+      });
+      
+      if (validSegments.length === 0) {
+        return {
+          action: 'REJECT',
+          message: `Cannot add ${newLeave.category} as the remaining time slots after accounting for higher priority leaves are too short (less than 30 minutes)`,
+          leavesToInsert: []
+        };
+      }
+      
+      return {
+        action: 'INSERT_SEGMENTED',
+        message: `Added ${newLeave.category} in ${validSegments.length} time slot(s) around existing higher priority leaves`,
+        leavesToInsert: validSegments
+      };
+    }
+  }
+
+  // If we reach here, the new leave has higher or equal priority to all overlapping leaves
+  
+  // Identify leaves that need to be modified or removed
+  const lowerOrEqualPriorityLeaves = sortedOverlappingLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) <= newLeavePriority
+  );
+
+  // Create a list to track all leaves after processing
+  const leavesToInsert = []; 
+  const leavesToDelete = [];
+  const modificationMessages = [];
+  
+  // First, handle equal priority leaves
+  const equalPriorityLeaves = lowerOrEqualPriorityLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) === newLeavePriority
+  );
+  
+  if (equalPriorityLeaves.length > 0) {
+    // For equal priority, use the most recent leave for overlapping parts
+    // We'll assume the new leave is the most recent (as it's being processed now)
+    
+    // Mark all equal priority leaves for deletion
+    for (const leave of equalPriorityLeaves) {
+      leavesToDelete.push(leave._id);
+    }
+    
+    modificationMessages.push(`Replaced ${equalPriorityLeaves.length} equal-priority leave(s) with new ${newLeave.category}`);
+  }
+  
+  // Handle lower priority leaves
+  const lowerPriorityLeaves = lowerOrEqualPriorityLeaves.filter(leave => 
+    (PRIORITY_LEVELS[leave.category] || 0) < newLeavePriority
+  );
+  
+  if (lowerPriorityLeaves.length > 0) {
+    // Group leaves by category for clear reporting
+    const categoryCounts = {};
+    
+    for (const leave of lowerPriorityLeaves) {
+      const leaveStart = new Date(leave.start_time);
+      const leaveEnd = new Date(leave.end_time);
+      
+      // Check for complete overlap - if completely overlapped, delete existing leave
+      if (newLeaveStart <= leaveStart && newLeaveEnd >= leaveEnd) {
+        leavesToDelete.push(leave._id);
+        categoryCounts[leave.category] = (categoryCounts[leave.category] || 0) + 1;
+      } 
+      // Check for partial overlap at the beginning
+      else if (newLeaveStart <= leaveStart && newLeaveEnd > leaveStart && newLeaveEnd < leaveEnd) {
+        // Create a modified leave for the non-overlapping part
+        const modifiedLeave = {
+          ...leave,
+          _id: undefined, // Will get new ID when inserted
+          start_time: new Date(newLeaveEnd),
+          end_time: leaveEnd,
+          duration: calculateDuration(new Date(newLeaveEnd), leaveEnd)
+        };
+        
+        const durationMinutes = (leaveEnd - new Date(newLeaveEnd)) / (1000 * 60);
+        if (durationMinutes >= 30) { // Only keep if remaining segment is at least 30 minutes
+          leavesToInsert.push(modifiedLeave);
+        }
+        
+        leavesToDelete.push(leave._id);
+        categoryCounts[leave.category] = (categoryCounts[leave.category] || 0) + 1;
+      } 
+      // Check for partial overlap at the end
+      else if (newLeaveStart > leaveStart && newLeaveStart < leaveEnd && newLeaveEnd >= leaveEnd) {
+        // Create a modified leave for the non-overlapping part
+        const modifiedLeave = {
+          ...leave,
+          _id: undefined, // Will get new ID when inserted
+          start_time: leaveStart,
+          end_time: new Date(newLeaveStart),
+          duration: calculateDuration(leaveStart, new Date(newLeaveStart))
+        };
+        
+        const durationMinutes = (new Date(newLeaveStart) - leaveStart) / (1000 * 60);
+        if (durationMinutes >= 30) { // Only keep if remaining segment is at least 30 minutes
+          leavesToInsert.push(modifiedLeave);
+        }
+        
+        leavesToDelete.push(leave._id);
+        categoryCounts[leave.category] = (categoryCounts[leave.category] || 0) + 1;
+      }
+      // Check for complete enclosure (new leave is inside existing leave)
+      else if (newLeaveStart > leaveStart && newLeaveEnd < leaveEnd) {
+        // Create two modified leaves for the non-overlapping parts
+        const modifiedLeave1 = {
+          ...leave,
+          _id: undefined, // Will get new ID when inserted
+          start_time: leaveStart,
+          end_time: new Date(newLeaveStart),
+          duration: calculateDuration(leaveStart, new Date(newLeaveStart))
+        };
+        
+        const modifiedLeave2 = {
+          ...leave,
+          _id: undefined, // Will get new ID when inserted
+          start_time: new Date(newLeaveEnd),
+          end_time: leaveEnd,
+          duration: calculateDuration(new Date(newLeaveEnd), leaveEnd)
+        };
+        
+        const durationMinutes1 = (new Date(newLeaveStart) - leaveStart) / (1000 * 60);
+        if (durationMinutes1 >= 30) { // Only keep if remaining segment is at least 30 minutes
+          leavesToInsert.push(modifiedLeave1);
+        }
+        
+        const durationMinutes2 = (leaveEnd - new Date(newLeaveEnd)) / (1000 * 60);
+        if (durationMinutes2 >= 30) { // Only keep if remaining segment is at least 30 minutes
+          leavesToInsert.push(modifiedLeave2);
+        }
+        
+        leavesToDelete.push(leave._id);
+        categoryCounts[leave.category] = (categoryCounts[leave.category] || 0) + 1;
+      }
+    }
+    
+    // Create a message about modifications
+    const categoryMessages = Object.entries(categoryCounts)
+      .map(([category, count]) => `${count} ${category}${count > 1 ? 's' : ''}`)
+      .join(', ');
+    
+    if (categoryMessages) {
+      modificationMessages.push(`Modified or replaced: ${categoryMessages}`);
+    }
+  }
+  
+  // Finally, add the new leave
+  leavesToInsert.push(newLeave);
+  
+  // Perform database operations
+  // Delete all leaves marked for deletion
+  for (const leaveId of leavesToDelete) {
+    await Message.deleteOne({ _id: leaveId });
+  }
+  
+  return {
+    action: 'INSERT_MULTIPLE',
+    message: modificationMessages.length > 0 ? modificationMessages.join('. ') : null,
+    leavesToInsert
+  };
+}
+
+/**
+ * Generate non-overlapping time segments by cutting out higher priority leaves
+ * @param {Date} startTime - Original start time
+ * @param {Date} endTime - Original end time
+ * @param {Array} priorityLeaves - Leaves with higher priority to cut out
+ * @returns {Array} - Array of valid time segments
+ */
+function generateNonOverlappingSegments(startTime, endTime, priorityLeaves) {
+  // Initialize with the original time segment
+  let segments = [{ start: startTime, end: endTime }];
+  
+  // For each higher priority leave, split existing segments if they overlap
+  for (const leave of priorityLeaves) {
+    const leaveStart = new Date(leave.start_time);
+    const leaveEnd = new Date(leave.end_time);
+    
+    const newSegments = [];
+    
+    for (const segment of segments) {
+      // Check if this segment overlaps with the leave
+      if (leaveStart <= segment.end && leaveEnd >= segment.start) {
+        // There's an overlap - split the segment
+        
+        // Add segment before the leave if it exists
+        if (segment.start < leaveStart) {
+          newSegments.push({
+            start: segment.start,
+            end: leaveStart
+          });
+        }
+        
+        // Add segment after the leave if it exists
+        if (segment.end > leaveEnd) {
+          newSegments.push({
+            start: leaveEnd,
+            end: segment.end
+          });
+        }
+      } else {
+        // No overlap, keep this segment as is
+        newSegments.push(segment);
+      }
+    }
+    
+    segments = newSegments;
+  }
+  
+  return segments;
 }
 
 /**
@@ -326,6 +549,8 @@ function areMutuallyExclusive(category1, category2) {
     ['FDL', 'WFH'],
     ['FDL', 'OOO'],
     ['HDL', 'WFH'],
+    ['HDL', 'OOO'], // Added: Half day leave is incompatible with OOO
+    ['HDL', 'HDL']  // Added: Can't have two half-day leaves
     // Add more pairs as needed
   ];
   
@@ -341,10 +566,96 @@ function areMutuallyExclusive(category1, category2) {
  * @returns {Object} - Validation result with isValid and message
  */
 async function validateLeaveAgainstRules(leave) {
-  // Check if there's a FDL already on this day
-  const existingLeaves = await getLeavesForDate(leave.user, new Date(leave.start_time));
+  // Ensure minimum duration of 30 minutes
+  const durationMinutes = (new Date(leave.end_time) - new Date(leave.start_time)) / (1000 * 60);
+  if (durationMinutes < 30) {
+    return {
+      isValid: false,
+      message: `Leaves must be at least 30 minutes long. Your leave is ${durationMinutes} minutes.`
+    };
+  }
   
-  // Check if there's already a FDL
+  // Validate start time is before end time
+  if (new Date(leave.start_time) >= new Date(leave.end_time)) {
+    return {
+      isValid: false,
+      message: `Start time must be before end time.`
+    };
+  }
+  
+  // FDL should be a full workday (9 AM to 6 PM)
+  if (leave.category === 'FDL') {
+    const startTime = new Date(leave.start_time);
+    const endTime = new Date(leave.end_time);
+    
+    // Check if the times approximate a full work day
+    // Allow a bit of flexibility (within 30 minutes of standard times)
+    const startHour = startTime.getHours();
+    const startMinutes = startTime.getMinutes();
+    const endHour = endTime.getHours();
+    const endMinutes = endTime.getMinutes();
+    
+    const standardStartTime = 9; // 9 AM
+    const standardEndTime = 18; // 6 PM
+    
+    const startTimeInMinutes = startHour * 60 + startMinutes;
+    const endTimeInMinutes = endHour * 60 + endMinutes;
+    const standardStartInMinutes = standardStartTime * 60;
+    const standardEndInMinutes = standardEndTime * 60;
+    
+    if (Math.abs(startTimeInMinutes - standardStartInMinutes) > 30 || 
+        Math.abs(endTimeInMinutes - standardEndInMinutes) > 30) {
+      return {
+        isValid: false,
+        message: `Full Day Leave (FDL) should approximately cover standard working hours (9 AM to 6 PM).`
+      };
+    }
+  }
+  
+  // HDL should be approximately half a workday (~4 hours)
+  if (leave.category === 'HDL') {
+    const durationHours = durationMinutes / 60;
+    if (durationHours < 3.5 || durationHours > 5) {
+      return {
+        isValid: false,
+        message: `Half Day Leave (HDL) should be approximately 4 hours (between 3.5 and 5 hours).`
+      };
+    }
+  }
+  
+  // LTO (Late to Office) should start at or after 9 AM
+  if (leave.category === 'LTO') {
+    const startTime = new Date(leave.start_time);
+    const startHour = startTime.getHours();
+    const startMinutes = startTime.getMinutes();
+    
+    if (startHour < 9 || (startHour === 9 && startMinutes < 0)) {
+      return {
+        isValid: false,
+        message: `Late to Office (LTO) should start at or after 9 AM.`
+      };
+    }
+  }
+  
+  // LE (Leaving Early) should end at or before 6 PM
+  if (leave.category === 'LE') {
+    const endTime = new Date(leave.end_time);
+    const endHour = endTime.getHours();
+    const endMinutes = endTime.getMinutes();
+    
+    if (endHour > 18 || (endHour === 18 && endMinutes > 0)) {
+      return {
+        isValid: false,
+        message: `Leaving Early (LE) should end at or before 6 PM.`
+      };
+    }
+  }
+  
+  // Check day-based rules with existing leaves
+  const leaveDate = new Date(leave.start_time);
+  const existingLeaves = await getLeavesForDate(leave.user, leaveDate);
+  
+  // Check if there's already a FDL on this day
   const existingFDL = existingLeaves.find(l => l.category === 'FDL');
   if (existingFDL && leave.category !== 'FDL') {
     return {
@@ -353,28 +664,20 @@ async function validateLeaveAgainstRules(leave) {
     };
   }
   
-  // Check if adding FDL when specific types already exist
-  if (leave.category === 'FDL') {
-    // FDL overrides everything, so this is always valid
-    return { isValid: true, message: null };
-  }
-  
-  // Check if adding HDL when not allowed
-  if (leave.category === 'HDL') {
+  // Check for mutually exclusive leave types
+  if (leave.category !== 'FDL') { // FDL overrides everything
     const conflictingLeaves = existingLeaves.filter(l => 
-      areMutuallyExclusive('HDL', l.category) && 
+      areMutuallyExclusive(leave.category, l.category) && 
       l._id.toString() !== (leave._id ? leave._id.toString() : '')
     );
     
     if (conflictingLeaves.length > 0) {
       return {
         isValid: false,
-        message: `Cannot add Half Day Leave as you already have ${conflictingLeaves[0].category} on this day`
+        message: `Cannot add ${leave.category} as you already have ${conflictingLeaves[0].category} on this day which is mutually exclusive`
       };
     }
   }
-  
-  // Additional validation rules can be added here
   
   return { isValid: true, message: null };
 }
@@ -419,26 +722,42 @@ app.event("message", async ({ event, say }) => {
           // Find any overlapping leaves
           const overlappingLeaves = await findOverlappingLeaves(obj);
           
-          // Handle overlap based on priority rules
+          // Handle overlap based on enhanced priority rules
           const overlapResult = await handleOverlappingLeaves(obj, overlappingLeaves);
           
           // Take action based on the result
-          if (overlapResult.action === 'INSERT') {
-            const leave = await Message.insertOne(obj);
+          if (overlapResult.action === 'INSERT' || overlapResult.action === 'INSERT_MULTIPLE' || overlapResult.action === 'INSERT_SEGMENTED') {
+            let notificationMessage = '';
+            const insertedLeaveIds = [];
             
-            let notificationMessage = `*Leave Notification*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`;
-            
-            // Add information about replaced leaves if applicable
-            if (overlapResult.message) {
-              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
+            // Insert all leaves from the result
+            for (const leaveToInsert of overlapResult.leavesToInsert) {
+              const leave = await Message.insertOne(leaveToInsert);
+              insertedLeaveIds.push(leave._id);
+              
+              // If this is the first/main leave or there's only one leave, create the main notification
+              if (insertedLeaveIds.length === 1 || overlapResult.leavesToInsert.length === 1) {
+                const leaveStartString = formatDate(leaveToInsert.start_time);
+                const leaveEndString = formatDate(leaveToInsert.end_time);
+                
+                notificationMessage = `*Leave Notification*\n👨‍💻 *Name:* ${leaveToInsert.username}\n📅 *From:* ${leaveStartString}\n📅 *To:* ${leaveEndString}\n⏳ *duration:* ${leaveToInsert.duration}\n${categoryEmoji[leaveToInsert.category].emoji} *Type:* ${leaveToInsert.category} (${categoryEmoji[leaveToInsert.category].full})\n📝 *Reason:* ${leaveToInsert.reason || "Not specified"}\n🪪 *LeaveId:* ${leave._id}`;
+              }
             }
             
-            // If this is a high-priority leave that affected other leaves, summarize what happened
-            if (overlapResult.message && overlappingLeaves.length > 0) {
-              const affectedCategories = [...new Set(overlappingLeaves.map(l => l.category))];
-              if (affectedCategories.length > 0) {
-                notificationMessage += `\nThis replaced: ${affectedCategories.join(', ')}`;
+            // If there are multiple leaves inserted (due to segmentation), add that info
+            if (overlapResult.leavesToInsert.length > 1) {
+              const additionalLeaves = overlapResult.leavesToInsert.slice(1); // Skip the first one we already reported
+              
+              notificationMessage += "\n\n*Additional time segments created:*";
+              for (let i = 0; i < additionalLeaves.length; i++) {
+                const addLeave = additionalLeaves[i];
+                notificationMessage += `\n${i+1}. ${formatDate(addLeave.start_time)} to ${formatDate(addLeave.end_time)} (${addLeave.duration}) - ${addLeave.category}`;
               }
+            }
+            
+            // Add information about replacements or modifications if applicable
+            if (overlapResult.message) {
+              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
             }
             
             say(notificationMessage);
