@@ -218,7 +218,7 @@ async function handleOverlappingLeaves(newLeave, overlappingLeaves) {
   
   // Check if any existing leave has higher priority
   const higherPriorityLeaves = overlappingLeaves.filter(leave => 
-    (PRIORITY_LEVELS[leave.category] || 0) >= newLeavePriority
+    (PRIORITY_LEVELS[leave.category] || 0) > newLeavePriority
   );
 
   if (higherPriorityLeaves.length > 0) {
@@ -241,6 +241,9 @@ async function handleOverlappingLeaves(newLeave, overlappingLeaves) {
   );
 
   if (lowerOrEqualPriorityLeaves.length > 0) {
+    let hasUpdated = false;
+    let updatedLeaveId = null;
+    
     // For each overlapping leave, decide what to do
     for (const existingLeave of lowerOrEqualPriorityLeaves) {
       // If same category and exact same time, just update
@@ -248,10 +251,21 @@ async function handleOverlappingLeaves(newLeave, overlappingLeaves) {
           existingLeave.start_time.getTime() === new Date(newLeave.start_time).getTime() && 
           existingLeave.end_time.getTime() === new Date(newLeave.end_time).getTime()) {
         await Message.updateOne({ _id: existingLeave._id }, { $set: newLeave });
+        hasUpdated = true;
+        updatedLeaveId = existingLeave._id;
       } else {
         // If completely overlapping, remove the existing leave
         await Message.deleteOne({ _id: existingLeave._id });
       }
+    }
+    
+    // If we updated an existing leave, return UPDATED action instead of INSERT
+    if (hasUpdated) {
+      return {
+        action: 'UPDATED',
+        message: `Updated existing ${newLeave.category} entry`,
+        leaveId: updatedLeaveId
+      };
     }
     
     return {
@@ -439,6 +453,15 @@ app.event("message", async ({ event, say }) => {
               if (affectedCategories.length > 0) {
                 notificationMessage += `\nThis replaced: ${affectedCategories.join(', ')}`;
               }
+            }
+            
+            say(notificationMessage);
+          } else if (overlapResult.action === 'UPDATED') {
+            // For UPDATED action, we don't need to insert, just notify
+            let notificationMessage = `*Leave Updated*\n👨‍💻 *Name:* ${obj.username}\n📅 *From:* ${startDateString}\n📅 *To:* ${endDateString}\n⏳ *duration:* ${obj.duration}\n${categoryEmoji[obj.category].emoji} *Type:* ${obj.category} (${categoryEmoji[obj.category].full})\n📝 *Reason:* ${obj.reason || "Not specified"}\n🪪 *LeaveId:* ${overlapResult.leaveId}`;
+            
+            if (overlapResult.message) {
+              notificationMessage += `\n\n*Note:* ${overlapResult.message}`;
             }
             
             say(notificationMessage);
